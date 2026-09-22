@@ -648,84 +648,89 @@ void		writeCl(struct c4stats * q)
 int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 	unsigned int bytes_to_go = maxlength;
 	unsigned char *read_point = string;
-	int bytesread = 0;
 	int count = 10;
 
 	while ((bytes_to_go > 0) && (count > 0)) {
-		bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
+		int bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
 		DEBUG((stderr, "readbytes(bytesread = %d)", bytesread));
-		bytes_to_go -= bytesread;
+
+		if (bytesread < 0) {
+			fprintf(stderr, "Read from link failed - result = %i\n", bytesread);
+			return (0);
+		}
+		if (bytesread == 0) {
+			count--;
+			continue;
+		}
+
 		read_point += bytesread;
+		bytes_to_go -= (unsigned int) bytesread;
 		count--;
 	}
 
-	if (bytesread < 0) {
-		fprintf(stderr, "Read from link failed - result = %i\n", bytesread);
-		bytesread = 0;
-	} else {
-		if (count == 0) {
-			fprintf(stderr, "Read from link failed (Timeout)\n");
-		} else {
-			bytesread = maxlength - bytes_to_go;
-		}
+	if (bytes_to_go != 0) {
+		fprintf(stderr, "Read from link failed (Timeout)\n");
+		return (0);
 	}
 
-	DEBUG((stderr, "readbytes(bytesread = %d)", bytesread));
+	DEBUG((stderr, "readbytes(bytesread = %d)", maxlength));
 	if (CocoPops) {
-		int i;
+		unsigned int i;
 		fputs("(", stderr);
-		for (i = 0; i < bytesread; i++) {
-			fprintf (stderr, "%0X ", (int) *(string + i) );
+		for (i = 0; i < maxlength; i++) {
+			fprintf (stderr, "%0X ", (unsigned int) *(string + i) );
 		}
 		fputs(")", stderr);
 		fputc('\n', stderr);
 		fflush(stderr);
 	}
 
-	return (bytesread);
+	return ((int) maxlength);
 }
 
 int getiserver(LINK TheLink, unsigned int *length, unsigned char *string, unsigned int maxlength){
-	if (readbytes(TheLink, string, 2) == 2){
-		*length = (string[1] << 8) + string[0];
-		if ((*length <= maxlength) && (length) && (readbytes(TheLink, string, *length) == *length)) {
-			return (TRUE);
-		} else {
-			if (length) {
-				return (FALSE);
-			} else {
-				/* length of zero */
-				return (TRUE);
-			}
-		}
-	} else {
+	unsigned char header[2];
+
+	if (readbytes(TheLink, header, 2) != 2) {
 		return (FALSE);
 	}
+
+	*length = ((unsigned int) header[1] << 8) | (unsigned int) header[0];
+
+	if (*length > maxlength) {
+		fprintf(stderr, "getiserver: packet of %u bytes exceeds buffer of %u\n",
+			*length, maxlength);
+		return (FALSE);
+	}
+
+	if (*length == 0) {
+		return (TRUE);
+	}
+
+	return (readbytes(TheLink, string, *length) == (int) *length);
 }
 
 int sendiserver(LINK TheLink, unsigned int length, unsigned char *buffer) {
 	unsigned char   int16[2];
-	
+	unsigned int    done = 0;
+
 	int16[0] = (unsigned char) (length & 0xFF);
 	int16[1] = (unsigned char) (length >> 8);
-	
-	if ((WriteLink(TheLink, int16, 2, TIMEOUT) == 2) && length) {
-		unsigned int start=0, written=0; /* , writing=64;  */
-		do {
-			/* if ((length-written) < writing)
-			writing = length-written; */
-			start += written;
-			written = WriteLink(TheLink, &buffer[start], (length-written), TIMEOUT);
-		} while (written && ((start+written) < length));
-		
-		if ((start+written) == length) {
-			return (TRUE);
-		} else {
-			return (FALSE);
-		}
-	} else {
+
+	if (WriteLink(TheLink, int16, 2, TIMEOUT) != 2) {
 		return (FALSE);
 	}
+
+	while (done < length) {
+		int written = WriteLink(TheLink, &buffer[done], length - done, TIMEOUT);
+
+		if (written <= 0) {
+			return (FALSE);
+		}
+		done += (unsigned int) written;
+	}
+
+	return (TRUE);
 }
 
 void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
