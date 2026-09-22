@@ -746,6 +746,7 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 		}
 		
 		if ((i != 0) || (q->parent != NULL)) {
+			free(route);
 			AbortExit("loader", "Error finding route thread, processor %d", p->tpid);
 		}
 		if ((WriteLink(TheLink, ROUTE, sizeof(ROUTE), TIMEOUT) == sizeof(ROUTE)) && sendiserver(TheLink, (p->routelen) + 1, route)) {
@@ -763,9 +764,8 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 				//	}
 				//}
 			}
-		
-			free(route);
 		}
+		free(route);
 	}
 }
 
