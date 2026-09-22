@@ -1178,18 +1178,25 @@ void            setC004(struct c4stats * p)
     setroute(TheLink, p->parent, 4);    /* application */
     command[1] = (unsigned char) p->route;
     command[0] = '\4';
-    sendiserver(TheLink, 2, command);   /* reset */
-    for (i = 0, length = 0; i < 32; i++)
-	if (p->config[i] != C004_EMPTY)
-	{
-	    command[length++] = '\0';
-	    command[length++] = p->config[i];
-	    command[length++] = (unsigned char) i;
-	}
+    if (!sendiserver(TheLink, 2, command))   /* reset */
+	AbortExit(PROGRAM_NAME, "C004 %d failed to reset", p->tpid);
+    for (i = 0, length = 0; i < C004_PORTS; i++)
+    {
+	int input = p->config[i];
+	if (input == C004_EMPTY)
+	    continue;
+	if ((input < 0) || (input >= C004_PORTS))
+	    AbortExit(PROGRAM_NAME, "C004 %d output %d has invalid input %d",
+		      p->tpid, i, input);
+	command[length++] = '\0';
+	command[length++] = (unsigned char) input;
+	command[length++] = (unsigned char) i;
+    }
     if (length > 0)
     {
 	tpboot(TheLink, (struct tpstats *) p);  /* raw mode */
-	sendiserver(TheLink, length, command);  /* config */
+	if (!sendiserver(TheLink, length, command))  /* config */
+	    AbortExit(PROGRAM_NAME, "C004 %d failed to accept configuration", p->tpid);
     }
 }
 /*}}}  */
@@ -1286,49 +1293,49 @@ int main(int argc, char *argv[]) {
 					}
 					setC004(q);
 				}
-				if (information) {
-					INFO(("\n"));
-				}
-				while (root->next != NULL) {
-					for (p = root; (p->next != NULL) && (p->next->next != NULL); p = p->next) {
-						if (class(p->tptype) == C4) {
-							q = (struct c4stats *) p->next;
-							free(q);
-						} else {
-							free(p->next);
-						}
-					}
-					p->next = NULL;
-				}
-				free(root);
-			
-				if (information) {
-					INFO(("Re-testing network after C004s set\n"));
-				}
-
-				if (do_reset) {
-					check(subsys, c4read, FALSE, information, do_reset);
-				} else {
-					AbortExit(PROGRAM_NAME, "Unable to reset network due to N option");
-				}
-			
-				if (information) {
-					INFO(("Matching network to template\n"));
-				}
-				same = compare(root, reference);
-			
-				if (!transputers) {
-					AbortExit(PROGRAM_NAME, "No Transputers found");
-				}
-				root = sort(root);
 			}
 			if (information) {
-				INFO(("Reading C004 settings\n"));
+				INFO(("\n"));
 			}
-			for (q = (struct c4stats *) root; q != NULL; q = (struct c4stats *) q->next) {
-				if (class(q->tptype) == C4) {
-					readC004(q);
-				}
+
+			/*
+			 * Discard the discovered tree once, after every C004 has
+			 * been programmed. check() rebuilds it below.
+			 */
+			while (root != NULL) {
+				p = root;
+				root = root->next;
+				free(p);
+			}
+
+			if (information) {
+				INFO(("Re-testing network after C004s set\n"));
+			}
+
+			if (do_reset) {
+				check(subsys, c4read, FALSE, information, do_reset);
+			} else {
+				AbortExit(PROGRAM_NAME, "Unable to reset network due to N option");
+			}
+
+			if (information) {
+				INFO(("Matching network to template\n"));
+			}
+			same = compare(root, reference);
+
+			if (!transputers) {
+				AbortExit(PROGRAM_NAME, "No Transputers found");
+			}
+			root = sort(root);
+		}
+
+		/* Read back every C004 for /c4 and /cl, with or without /cs. */
+		if (information) {
+			INFO(("Reading C004 settings\n"));
+		}
+		for (q = (struct c4stats *) root; q != NULL; q = (struct c4stats *) q->next) {
+			if (class(q->tptype) == C4) {
+				readC004(q);
 			}
 		}
 	}
