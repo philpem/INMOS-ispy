@@ -358,7 +358,7 @@ int		lex(FILE * stream, struct tpstats ** root,
 	    } else if (i > 0)
 	    {
 		struct c4stats *q;
-		int		from = 0, to;
+		int		from = 0, to = 0;
 		char		bracket, *c;
 		i = sscanf(line, "%d %s", &tpid, tputer);
 		if ((i == 2) && (tputer[0] == 'C'))
@@ -386,18 +386,25 @@ int		lex(FILE * stream, struct tpstats ** root,
 		    {
 			case '[':
 			    for (to = 0; (line[i] != 0) && (line[i] != ']'); i++)
+			    {
+				if (to >= C004_PORTS)
+				    AbortExit("lex", "C004 %d: too many ports", tpid);
 				switch (line[i])
 				{
 				    case '-':
-						to++;
+					to++;
+					break;
 				    case ' ':
-						break;
+					break;
 				    default:
-						for (from = 0; LETTER[from] != line[i]; from++);
-						q->config[to] = (char) from;
-						to++;
-						break;
+					for (from = 0; (from < C004_PORTS) && (LETTER[from] != line[i]); from++);
+					if (from >= C004_PORTS)
+					    AbortExit("lex", "C004 %d: bad port '%c'", tpid, line[i]);
+					q->config[to] = (char) from;
+					to++;
+					break;
 				}
+			    }
 			    break;
 			case '(':
 			    c = &line[i];
@@ -420,6 +427,10 @@ int		lex(FILE * stream, struct tpstats ** root,
 				    continue;
 				while (*c && ((*c<'0') || (*c>'9')))
 				    c++;
+				if ((from < 0) || (from >= C004_PORTS) ||
+				    (to < 0) || (to >= C004_PORTS))
+				    AbortExit("lex", "C004 %d: link number out of range %d-%d",
+					      tpid, from, to);
 				switch (delimiter)
 				{
 				    case '-':
@@ -570,27 +581,23 @@ int		writeup(struct tpstats * p, int c4read, int comment)
 /*{{{  void	       writeC4(struct c4stats * q) */
 void		writeC4(struct c4stats * q)
 {
-    char	    inputs[32];
     int		    i, error = FALSE;
-    for (i = 0; i < 32; i++)
-		inputs[i] = C004_EMPTY;
-    for (i = 0; i < 32; i++)
-		if (q->config[i] != C004_EMPTY)
-		{
-			int		    j;
-			j = q->config[i];
-			if (inputs[j] != C004_EMPTY)
-			error = TRUE;
-		}
     printf("%4d %-5s   [", q->tpid, tptostr(q->tptype));
-    for (i = 0; i < 32; i++)
+    for (i = 0; i < C004_PORTS; i++)
     {
+		int		input = q->config[i];
 		if (!(i % 8))
 			putchar(' ');
-		if (q->config[i] == C004_EMPTY)
+		if (input == C004_EMPTY)
 			putchar('-');
 		else
-			putchar(LETTER[q->config[i]]);
+			if ((input >= 0) && (input < C004_PORTS))
+				putchar(LETTER[input]);
+			else
+			{
+				putchar('?');
+				error = TRUE;
+			}
     }
 
     if (error)
@@ -602,38 +609,27 @@ void		writeC4(struct c4stats * q)
 /*{{{  void	       writeCl(struct c4stats * q) */
 void		writeCl(struct c4stats * q)
 {
-    char	    inputs[32];
-    int		    i, error = FALSE;
-    for (i = 0; i < 32; i++)
-		inputs[i] = C004_EMPTY;
-    for (i = 0; i < 32; i++)
-		if (q->config[i] != C004_EMPTY)
-		{
-			int		    j;
-			j = q->config[i];
-			if (inputs[j] != C004_EMPTY)
-			error = TRUE;
-		}
+    int		    i;
     printf("%4d %-5s (", q->tpid, tptostr(q->tptype));
-    for (i = 0; i < 32; i++)
+    for (i = 0; i < C004_PORTS; i++)
     {
-		int		j;
-		if (q->config[i] != C004_EMPTY)
+		int		j = q->config[i];
+		if (j == C004_EMPTY)
+			continue;
+		if ((j < 0) || (j >= C004_PORTS))
 		{
-			j = q->config[i];
-			if (q->config[j] == (char) i)
-			{
+			printf("%d>? ", i);
+			continue;
+		}
+		if (q->config[j] == (signed char) i)
+		{
 			if (j >= i)
 				printf("%d-%d ", i, j);
-			} else
+		} else
 			printf("%d>%d ", i, j);
-		}
     }
 
-    if (error)
-		printf(")?");
-    else
-		printf(")");
+    printf(")");
 }
 /*}}}  */
 
