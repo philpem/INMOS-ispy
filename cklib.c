@@ -36,14 +36,13 @@
 #define TIMEOUT 40
 #define SEGSIZE 511
 #define MAXINT	((unsigned)-1)
-#define EMPTY ' '
 
 #define SWITCHAR '-'
 
 static char    *TPIDS[] = {"???", "?1/2?", "DISK", "HOST", "T???",
 	 "?T16", "?T32", "T16", "T32", "C004", "M212", "T2", "T414", "T800",
 			   "T425", "T805", "T801", "", "T225", "T400"};
-static char	LETTER[32] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+static char	LETTER[33] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
 /*}}}  */
 /*{{{  externs */
 extern char *PROGRAM_NAME;
@@ -340,20 +339,20 @@ int		lex(FILE * stream, struct tpstats ** root,
 			curr->linkno[i] = TXXX;
 		    else
 		    {
-			int		tpno;
-			if (sscanf(linkinfo[i], "%d:%c", &tpno, &c) == 2)
-			{
-			    curr->tpno[i] = tpno;
-			    if (c == 'C')
-				curr->linkno[i] = C4;
-			    else
-				curr->linkno[i] = c - '0';
-			    curr->links[i] = curr;	/* for benefit of C004 */
-			} else
-			{
-			    curr->linkno[i] = readtp(linkinfo[i]);
-			    curr->links[i] = NULL;	/* for benefit of C004 */
-			}
+				int		tpno;
+				if (sscanf(linkinfo[i], "%d:%c", &tpno, &c) == 2)
+				{
+					curr->tpno[i] = tpno;
+					if (c == 'C')
+					curr->linkno[i] = C4;
+					else
+					curr->linkno[i] = c - '0';
+					curr->links[i] = curr;	/* for benefit of C004 */
+				} else
+				{
+					curr->linkno[i] = readtp(linkinfo[i]);
+					curr->links[i] = NULL;	/* for benefit of C004 */
+				}
 		    }
 		}
 	    } else if (i > 0)
@@ -379,7 +378,8 @@ int		lex(FILE * stream, struct tpstats ** root,
 		    q->tptype = readtp(tputer);
 		    if (class(q->tptype) != C4)
 			AbortExit("lex", "%s ???", line);
-		    strcpy(q->config, "				       ");
+		    for (i = 0; i < C004_PORTS; i++)
+				q->config[i] = C004_EMPTY;
 		    for (i = 0; (line[i] != '[') && (line[i] != '(') && line[i]; i++);
 		    bracket = line[i++];
 		    switch (bracket)
@@ -389,14 +389,14 @@ int		lex(FILE * stream, struct tpstats ** root,
 				switch (line[i])
 				{
 				    case '-':
-					to++;
+						to++;
 				    case ' ':
-					break;
+						break;
 				    default:
-					for (from = 0; LETTER[from] != line[i]; from++);
-					q->config[to] = (char) from;
-					to++;
-					break;
+						for (from = 0; LETTER[from] != line[i]; from++);
+						q->config[to] = (char) from;
+						to++;
+						break;
 				}
 			    break;
 			case '(':
@@ -423,19 +423,19 @@ int		lex(FILE * stream, struct tpstats ** root,
 				switch (delimiter)
 				{
 				    case '-':
-					if (q->config[from] == EMPTY)
+					if (q->config[from] == C004_EMPTY)
 					    q->config[from] = (char) to;
 					else
 					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
 						      tpid, from, to, q->config[from]);
-					if ((q->config[to] == EMPTY) || (to == from))
+					if ((q->config[to] == C004_EMPTY) || (to == from))
 					    q->config[to] = (char) from;
 					else
 					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
 						      tpid, to, from, q->config[to]);
 					break;
 				    case '>':
-					if (q->config[from] == EMPTY)
+					if (q->config[from] == C004_EMPTY)
 					    q->config[from] = (char) to;
 					else
 					    AbortExit("lex", "C004 %d: link %d connected twice",
@@ -573,30 +573,30 @@ void		writeC4(struct c4stats * q)
     char	    inputs[32];
     int		    i, error = FALSE;
     for (i = 0; i < 32; i++)
-	inputs[i] = EMPTY;
+		inputs[i] = C004_EMPTY;
     for (i = 0; i < 32; i++)
-	if (q->config[i] != EMPTY)
-	{
-	    int		    j;
-	    j = q->config[i];
-	    if (inputs[j] != EMPTY)
-		error = TRUE;
-	}
+		if (q->config[i] != C004_EMPTY)
+		{
+			int		    j;
+			j = q->config[i];
+			if (inputs[j] != C004_EMPTY)
+			error = TRUE;
+		}
     printf("%4d %-5s   [", q->tpid, tptostr(q->tptype));
     for (i = 0; i < 32; i++)
     {
-	if (!(i % 8))
-	    putchar(' ');
-	if (q->config[i] == EMPTY)
-	    putchar('-');
-	else
-	    putchar(q->config[i]);
+		if (!(i % 8))
+			putchar(' ');
+		if (q->config[i] == C004_EMPTY)
+			putchar('-');
+		else
+			putchar(LETTER[q->config[i]]);
     }
 
     if (error)
-	printf(" ]?");
+		printf(" ]?");
     else
-	printf(" ]");
+		printf(" ]");
 }
 /*}}}  */
 /*{{{  void	       writeCl(struct c4stats * q) */
@@ -605,35 +605,35 @@ void		writeCl(struct c4stats * q)
     char	    inputs[32];
     int		    i, error = FALSE;
     for (i = 0; i < 32; i++)
-	inputs[i] = EMPTY;
+		inputs[i] = C004_EMPTY;
     for (i = 0; i < 32; i++)
-	if (q->config[i] != EMPTY)
-	{
-	    int		    j;
-	    j = q->config[i];
-	    if (inputs[j] != EMPTY)
-		error = TRUE;
-	}
+		if (q->config[i] != C004_EMPTY)
+		{
+			int		    j;
+			j = q->config[i];
+			if (inputs[j] != C004_EMPTY)
+			error = TRUE;
+		}
     printf("%4d %-5s (", q->tpid, tptostr(q->tptype));
     for (i = 0; i < 32; i++)
     {
-	int		j;
-	if (q->config[i] != EMPTY)
-	{
-	    j = q->config[i];
-	    if (q->config[j] == (char) i)
-	    {
-		if (j >= i)
-		    printf("%d-%d ", i, j);
-	    } else
-		printf("%d>%d ", i, j);
-	}
+		int		j;
+		if (q->config[i] != C004_EMPTY)
+		{
+			j = q->config[i];
+			if (q->config[j] == (char) i)
+			{
+			if (j >= i)
+				printf("%d-%d ", i, j);
+			} else
+			printf("%d>%d ", i, j);
+		}
     }
 
     if (error)
-	printf(")?");
+		printf(")?");
     else
-	printf(")");
+		printf(")");
 }
 /*}}}  */
 

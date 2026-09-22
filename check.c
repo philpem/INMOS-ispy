@@ -68,7 +68,6 @@ char *PROGRAM_NAME = "ispy";
 
 #define SWITCHAR 	'-'
 #define SEGSIZE  	511
-#define EMPTY   	(-1)
 #define MAXLENGTH 	1024          /* maximum route length */
 #define PERLINE 	9
 #define CocoPops        0
@@ -153,7 +152,10 @@ const char *byte_to_binary(int x) {
 void readC004(struct c4stats * q) {
 	unsigned int    length;
 	unsigned char   query[2];
+	unsigned char   raw[C004_PORTS];
 	int             i;
+
+	/* Identify C004 revision */
 	query[0] = 8;
 	query[1] = (char) q->route;
 	setroute(TheLink, q->parent, 4);
@@ -163,27 +165,35 @@ void readC004(struct c4stats * q) {
 	if (!getiserver(TheLink, &length, query, 2)) {
 		AbortExit(PROGRAM_NAME, "Failed to read C004 %d type", q->tpid);
 	}
-	if (length == 1) {
-		q->tptype = C4 + query[0] - 'a';
+	if (length != 1 || (query[0] != 'a' && query[0] != 'b')) {
+		AbortExit(PROGRAM_NAME, "C004 %d returned invalid type response", q->tpid);
 	}
+	q->tptype = C4 + query[0] - 'a';
+
+	/*
+	 * Read all 32 output selections.
+	 * The target-side Occam code sends the 32 enquiry results back to us.
+	 */
 	query[0] = 2;
 	query[1] = (unsigned char) q->route;
 	if (!sendiserver(TheLink, (unsigned int) 2, query)) {
 		AbortExit(PROGRAM_NAME, "Failed to query C004 %d", q->tpid);
 	}
-	if (!getiserver(TheLink, &length, (unsigned char *) q->config, 32)) {
-		AbortExit(PROGRAM_NAME, "C004 %d failed to respond to query", q->tpid);
+	if (!getiserver(TheLink, &length, raw, sizeof(raw)) || length != C004_PORTS) {
+		AbortExit(PROGRAM_NAME, "C004 %d failed to return a complete configuration", q->tpid);
 	}
-	for (i = 0; i < 32; i++) {
+
+	for (i = 0; i < C004_PORTS; i++) {
 		if (q->tptype == C4) {
-			/* C004a */
-			q->config[i] = (char) ((int) q->config[i] & 0x1F);
+			/* C004a: always connected */
+			q->config[i] = (signed char)(raw[i] & 0x1F);
 		} else {
-			/* C004b */
-			q->config[i] = (char) (((int) q->config[i] & 0x9F) ^ 0x80);
-		}
-		if (q->config[i] < 0) {
-			q->config[i] = EMPTY;
+			/* C004b: bit 7 indicates the output is connected */
+			if (raw[i] & 0x80) {
+				q->config[i] = (signed char)(raw[i] & 0x1F);
+			} else {
+				q->config[i] = C004_EMPTY;
+			}
 		}
 	}
 }
@@ -1170,7 +1180,7 @@ void            setC004(struct c4stats * p)
     command[0] = '\4';
     sendiserver(TheLink, 2, command);   /* reset */
     for (i = 0, length = 0; i < 32; i++)
-	if (p->config[i] != EMPTY)
+	if (p->config[i] != C004_EMPTY)
 	{
 	    command[length++] = '\0';
 	    command[length++] = p->config[i];
