@@ -9,3 +9,6 @@ build/
 # redistribute.  The D7x05 archives come from:
 #   http://transputer.classiccmp.org/software/languages/occam/compilers/inmos/commercial/
 tools/inmos/
+
+# Python
+__pycache__/
