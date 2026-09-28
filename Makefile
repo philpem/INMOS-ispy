@@ -43,7 +43,7 @@ ispy$(E):      check$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o ispy$(E) check$(O) cklib$(O) $(LINKOBJS) $(LIBRARIES)
 
 check$(O):      check.c checklib.h inmos.h cklib.h \
-		type32.h type16.h check32.h check16.h iserver.h
+		type32.h type16.h check32.h check16.h c00416.h c00432.h iserver.h
 		$(CC) -DDEFAULTLINK=$(DEFAULTLINK) -o check$(O) check.c
 
 

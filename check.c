@@ -65,6 +65,8 @@ char *PROGRAM_NAME = "ispy";
 #include "type32.h"
 #include "check16.h"
 #include "check32.h"
+#include "c00416.h"
+#include "c00432.h"
 
 #define SWITCHAR 	'-'
 #define SEGSIZE  	511
@@ -542,7 +544,7 @@ void solve(struct tpstats * current, int length, unsigned char *buffer) {
 }
 
 void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
-    /* int             c004count = 0, c004s[100]; */
+    int             c004count = 0, c004s[100];
     do {
         int i, success;
         struct tpstats * parent, * p;
@@ -616,7 +618,7 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
 
         success = TRUE;
         while (success) {
-            /* int             c4 = FALSE; */
+            int             c4 = FALSE;
 
             if (information) {
                 INFO(("# CPU"));
@@ -760,13 +762,12 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
                         {
                             struct tpstats * q;
                             q = create(p, j);
-                            /* c4 = TRUE; */
+                            c4 = TRUE;
                         }
                         break;
                     }
                 }
             }
-#if 0 /* cannot test this */
             if (c4) {
                 if (information)
                     INFO(("# C004s "));
@@ -809,15 +810,15 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
                     if (reset) {
                         i--; /* undo 'for' increment */
                         if (information)
-                            INFO(("# Reset C004 %d\n", p-> links[i] - > tpid));
+                            INFO(("# Reset C004 %d\n", p-> links[i]->tpid));
                         setroute(TheLink, p, 4); /* application */
                         command[1] = (unsigned char) i;
                         command[0] = '\4';
                         sendiserver(TheLink, 2, command); /* reset */
                         c004s[c004count++] = sum;
-                        while (root - > next != NULL) {
+                        while (root->next != NULL) {
                             for (p = root;
-                                (p-> next != NULL) && (p-> next - > next != NULL); p = p-> next);
+                                (p-> next != NULL) && (p-> next->next != NULL); p = p-> next);
                             free(p-> next);
                             p-> next = NULL;
                         }
@@ -826,7 +827,6 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
                     success = !reset;
                 }
             } else
-# endif
             success = TRUE;
             if (success) {
                 success = nextcandidate( & p, & parent);
