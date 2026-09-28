@@ -1,0 +1,30 @@
+PROC pass32(VAL INT bootchan)
+  --{{{  CHANs
+  [4]CHAN OF ANY INPUT :
+  PLACE INPUT AT 4 :
+  [4]CHAN OF ANY OUTPUT :
+  PLACE OUTPUT AT 0 :
+  CHAN OF ANY HOST.IN  IS INPUT [bootchan] :
+  CHAN OF ANY HOST.OUT IS OUTPUT[bootchan] :
+  --}}}
+  BYTE b :
+  SEQ
+    HOST.IN ? b
+    CHAN OF ANY SLAVE.IN  IS INPUT [INT b] :
+    CHAN OF ANY SLAVE.OUT IS OUTPUT[INT b] :
+    PAR
+      --{{{  HOST to SLAVE
+      WHILE TRUE
+        BYTE b :
+        SEQ
+          HOST.IN ? b
+          SLAVE.OUT ! b
+      --}}}
+      --{{{  SLAVE to HOST
+      WHILE TRUE
+        BYTE b :
+        SEQ
+          SLAVE.IN ? b
+          HOST.OUT ! b
+      --}}}
+:

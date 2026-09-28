@@ -1,0 +1,57 @@
+
+-- --------------------------------------------------
+--
+--    checklib.occ  --  occam tag definitions
+--    
+-- --------------------------------------------------
+
+PROTOCOL SP IS ANY :     -- actually INT16::[]BYTE :
+
+--{{{  p.command
+VAL UNKNOWN IS -140 :
+VAL HALF  IS -130 :  -- 10 Mbit link from 20 Mbit TP
+VAL DISK  IS -120 :  -- link 2 of M212
+VAL HOST  IS -110 :  -- myself booting myself
+VAL TXXX  IS -100 :  -- a transputer
+VAL BAD16 IS -90 :  -- T16 with bad internal RAM
+VAL BAD32 IS -80 :  -- T32 with bad internal RAM
+VAL T16   IS -70 :  -- 16 bit TP
+VAL T32   IS -60 :  -- 32 bit TP
+VAL C4    IS -50 :  -- C004
+VAL M212  IS -40 :
+VAL T.212 IS -30 :
+VAL T.414 IS -20 :
+VAL T414A IS -20 :
+VAL T414B IS -19 :
+VAL T.800 IS -10:
+VAL T800C IS -8 :
+VAL T800D IS -7 :
+VAL T.425 IS  0 :
+VAL T.805 IS  10 :
+VAL T.801 IS  20 :
+VAL T.225 IS  40 :
+VAL T.400 IS  50 :
+
+VAL qTXXX   IS 0(BYTE):
+VAL qC4     IS 1(BYTE):
+VAL qT16    IS 2(BYTE):
+VAL qT32    IS 3(BYTE):
+VAL qHALF   IS 4(BYTE):
+VAL qM212   IS 5(BYTE):
+VAL qDISK   IS 6(BYTE):
+
+VAL TAG.SETPATH IS 0(BYTE):
+VAL TAG.LSPEED  IS 9(BYTE):
+VAL TAG.BOOT    IS 2(BYTE):
+VAL TAG.TEST16  IS 3(BYTE):
+VAL TAG.TEST32  IS 4(BYTE):
+VAL TAG.HALT    IS 255(BYTE):
+
+VAL ESCAPE      IS #FFFF(INT16):
+--}}}  
+
+-- Link timeout
+VAL INT LINK.TIMEOUT IS 4000 :  -- low priority ticks
+--
+--  eof
+--
