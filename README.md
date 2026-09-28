@@ -10,6 +10,23 @@ Should build cleanly with GNU make and any modern version of GCC.
 
 ispy and mtest work as previous - anyone who is used to the old versions should find no substantial changes in behaviour. Most modifications are limited to code formatting and header file locations.
 
+## Tools
+
+`tools/tdis.py` is a dependency-free Transputer (T2/T4/T8) disassembler and
+recursive-descent analyser, useful for inspecting the compiled occam code blobs
+embedded in ISpy/mtest (`type16.h`, `check32.h`, `c00416.h`, ...).
+
+```
+python3 tools/tdis.py selftest                 # validate the decoder
+python3 tools/tdis.py blobs ispy               # list embedded code blobs
+python3 tools/tdis.py disasm ispy --offset 0xB4C0 --length 956 --recursive --stats
+```
+
+The blobs interleave code with constant/process tables, so `--recursive`
+follows direct branches, calls and `ldpi`+`startp` process pointers and renders
+unreachable bytes as `db`; `--stats` reports code coverage and an opcode
+histogram.
+
 ## Notes
 
 Supplied with a copy of link-driver.h as bundled with the kernel driver above. I will attempt to keep the two header files in sync, but if in doubt, install the latest kernel driver from my repo and symlink it here instead.
