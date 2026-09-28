@@ -1,3 +1,11 @@
 *.o
 ispy
 mtest
+
+# Generated occam code-blob headers and build scratch
+build/
+
+# Third-party INMOS/INMOS-compatible toolchain downloads - not ours to
+# redistribute.  The D7x05 archives come from:
+#   http://transputer.classiccmp.org/software/languages/occam/compilers/inmos/commercial/
+tools/inmos/

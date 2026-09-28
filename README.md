@@ -27,6 +27,28 @@ follows direct branches, calls and `ldpi`+`startp` process pointers and renders
 unreachable bytes as `db`; `--stats` reports code coverage and an opcode
 histogram.
 
+`tools/tco2h.py` converts an `ilist /C` TCOFF listing into a code-blob header
+(`type16.h`, `check32.h`, ...). It is a dependency-free replacement for the lost
+INMOS `tco2h.pl`.
+
+### Rebuilding the occam code blobs
+
+`tools/occam-build.sh` compiles `occam/*.occ` with the original INMOS occam 2
+DOS toolset under DOSBox, runs `ilist /C`, and regenerates the headers with
+`tco2h.py`:
+
+```
+tools/occam-build.sh build/occam
+```
+
+It needs `dosbox`, `unzip` and `python3`, plus the D7305 toolset archive at
+`tools/inmos/d7305a.zip` (not distributed here; see `.gitignore`). The D7x05
+archives are from
+<http://transputer.classiccmp.org/software/languages/occam/compilers/inmos/commercial/>.
+
+The generated headers for `type16/32`, `check16/32` and `mtest16/32` are
+byte-for-byte identical to the blobs in the released 3.23 binaries.
+
 ## Notes
 
 Supplied with a copy of link-driver.h as bundled with the kernel driver above. I will attempt to keep the two header files in sync, but if in doubt, install the latest kernel driver from my repo and symlink it here instead.
