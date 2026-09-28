@@ -20,7 +20,9 @@ RM              = rm
 OCCAM		= oc -y -a -n -k -v -e -w -h -T
 FIND            = grep
 
-all:     ispy$(E) mtest$(E)
+.PHONY: all clean occam
+
+all:     ispy$(E) mtest$(E) occam
 
 TESTSRCS=test2.occ test414.occ test425.occ test80x.occ test800.occ test801.occ
 TESTHSRCS=test2.h test414.h test425.h test32.h test80x.h test800.h test801.h
@@ -33,7 +35,22 @@ archive:
 # this makefile in 'included' by another makefile
 
 clean:
-		rm -f *.o ispy mtest
+		rm -f *.o ispy mtest .occam.stamp
+
+#
+#  occam code-blob headers
+#
+#  Compiles occam/*.occ with the original INMOS D7305 toolset under DOSBox and
+#  regenerates type16.h/type32.h/... with tools/tco2h.py.  The toolset archive
+#  is downloaded on demand (see tools/fetch-toolchain.sh).  Run "make ispy" or
+#  "make mtest" to skip this step.
+#
+
+occam: .occam.stamp
+
+.occam.stamp: $(wildcard occam/*.occ) tools/occam-build.sh tools/tco2h.py tools/fetch-toolchain.sh
+		tools/occam-build.sh $(CURDIR)
+		touch $@
 
 #
 #  ispy
@@ -43,7 +60,7 @@ ispy$(E):      check$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o ispy$(E) check$(O) cklib$(O) $(LINKOBJS) $(LIBRARIES)
 
 check$(O):      check.c checklib.h inmos.h cklib.h \
-		type32.h type16.h check32.h check16.h c00416.h c00432.h iserver.h
+		type32.h type16.h check32.h check16.h c00416.h c00432.h iserver.h | occam
 		$(CC) -DDEFAULTLINK=$(DEFAULTLINK) -o check$(O) check.c
 
 
@@ -55,7 +72,7 @@ mtest$(E):      mtest$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o mtest$(E) mtest$(O) cklib$(O) $(LINKOBJS)
 
 mtest$(O):      mtest.c cklib.h inmos.h  \
-		mtest32.h mtest16.h checklib.h
+		mtest32.h mtest16.h checklib.h | occam
 		$(CC) -o mtest$(O) mtest.c
 
 

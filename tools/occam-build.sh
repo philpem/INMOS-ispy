@@ -31,7 +31,7 @@ work=${OCCAM_WORK:-${TMPDIR:-/tmp}/ispy-occam}
 for tool in dosbox unzip python3; do
     command -v "$tool" >/dev/null || { echo "error: $tool not found" >&2; exit 1; }
 done
-[ -f "$zip" ] || { echo "error: toolset archive not found: $zip" >&2; exit 1; }
+[ -f "$zip" ] || "$root/tools/fetch-toolchain.sh"
 
 echo "==> extracting toolset"
 rm -rf "$work"
@@ -50,7 +50,7 @@ bases=()
 for src in "$root"/occam/*.occ; do
     base=$(basename "$src" .occ)
     case "$base" in
-        checklib|peekpoke) continue ;;   # include-only / needs router.occ
+        checklib|peekpoke|pass16|pass32) continue ;;   # include-only / examples not used here
     esac
     bases+=("$base")
 done

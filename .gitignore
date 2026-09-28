@@ -4,6 +4,7 @@ mtest
 
 # Generated occam code-blob headers and build scratch
 build/
+.occam.stamp
 
 # Third-party INMOS/INMOS-compatible toolchain downloads - not ours to
 # redistribute.  The D7x05 archives come from:
