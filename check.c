@@ -165,10 +165,18 @@ void readC004(struct c4stats * q) {
 	if (!getiserver(TheLink, &length, query, 2)) {
 		AbortExit(PROGRAM_NAME, "Failed to read C004 %d type", q->tpid);
 	}
-	if (length != 1 || (query[0] != 'a' && query[0] != 'b')) {
-		AbortExit(PROGRAM_NAME, "C004 %d returned invalid type response", q->tpid);
+	if ((length == 1) && ((query[0] == 'a') || (query[0] == 'b'))) {
+		q->tptype = C4 + query[0] - 'a';
+	} else {
+		/*
+		 * C004A has no identification function, so the target may
+		 * return nothing or a value other than 'a'/'b'.  Keep the
+		 * revision parsed from the template rather than failing.
+		 */
+		fprintf(stderr,
+			"Warning - C004 %d did not report a revision, using %s\n",
+			q->tpid, tptostr(q->tptype));
 	}
-	q->tptype = C4 + query[0] - 'a';
 
 	/*
 	 * Read all 32 output selections.
