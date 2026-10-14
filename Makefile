@@ -20,13 +20,16 @@ RM              = rm
 OCCAM		= oc -y -a -n -k -v -e -w -h -T
 FIND            = grep
 
-.PHONY: all clean occam check
+.PHONY: all clean occam check test-host
 
-all:     ispy$(E) mtest$(E)
+all:     ispy$(E) mtest$(E) ftest$(E)
 
-# Host regressions use the checked-in blobs, without requiring DOSBox/hardware.
-check:
-		python3 -m unittest discover -s tests -p 'test_*.py'
+FTESTOBJS = ftest$(O) testt2$(O) testt32$(O) testt414$(O) testt425$(O) \
+            testt80x$(O) testt800$(O) testt801$(O) testlater$(O)
+
+# Host regressions use checked-in blobs, without DOSBox or hardware.
+check test-host:
+		python3 -m unittest discover -s tests -v
 
 TESTSRCS=test2.occ test414.occ test425.occ test80x.occ test800.occ test801.occ
 TESTHSRCS=test2.h test414.h test425.h test32.h test80x.h test800.h test801.h
@@ -39,7 +42,7 @@ archive:
 # this makefile in 'included' by another makefile
 
 clean:
-		rm -f *.o ispy mtest .occam.stamp
+		rm -f *.o ispy mtest ftest .occam.stamp
 
 #
 #  occam code-blob headers
@@ -55,7 +58,7 @@ occam: .occam.stamp
 # If regeneration and host targets are requested together, wait for the new
 # headers before deciding whether the embedding objects need recompilation.
 ifneq ($(filter occam,$(MAKECMDGOALS)),)
-check$(O) mtest$(O): .occam.stamp
+check$(O) mtest$(O) $(FTESTOBJS): .occam.stamp
 endif
 
 .occam.stamp: $(wildcard occam/*.occ) tools/occam-build.sh tools/tco2h.py tools/fetch-toolchain.sh
@@ -84,6 +87,43 @@ mtest$(E):      mtest$(O) cklib$(O) $(LINKOBJS)
 mtest$(O):      mtest.c cklib.h inmos.h  \
 		mtest32.h mtest16.h checklib.h
 		$(CC) -o mtest$(O) mtest.c
+
+#
+#  ftest
+#
+
+ftest$(E): $(FTESTOBJS) cklib$(O) $(LINKOBJS)
+		$(LINK) -o $@ $(FTESTOBJS) cklib$(O) $(LINKOBJS) $(LIBRARIES)
+
+$(FTESTOBJS): inmos.h checklib.h cklib.h testcode.h
+
+ftest$(O): ftest.c route16.h route32.h test4k.h peek.h
+		$(CC) -o $@ ftest.c
+
+testt2$(O): testt2.c test222a.h test222b.h
+		$(CC) -o $@ testt2.c
+
+testt32$(O): testt32.c testt32a.h testt32b.h
+		$(CC) -o $@ testt32.c
+
+testt414$(O): testt414.c test414a.h
+		$(CC) -o $@ testt414.c
+
+testt425$(O): testt425.c test425a.h
+		$(CC) -o $@ testt425.c
+
+testt80x$(O): testt80x.c test80xa.h test80xb.h test80xc.h test80xd.h
+		$(CC) -o $@ testt80x.c
+
+testt800$(O): testt800.c test800a.h
+		$(CC) -o $@ testt800.c
+
+testt801$(O): testt801.c test801a.h
+		$(CC) -o $@ testt801.c
+
+testlater$(O): testlater.c probe85.h test85cm.h test85st.h test85co.h test85in.h \
+              probe45.h test45cm.h test45st.h test45co.h test45in.h
+		$(CC) -o $@ testlater.c
 
 
 #

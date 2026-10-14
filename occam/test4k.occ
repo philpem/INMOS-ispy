@@ -1,0 +1,67 @@
+
+-- --------------------------------------------------
+--
+--    test4k.occ  --  tests 4k RAM
+--
+-- --------------------------------------------------
+
+#INCLUDE "checklib.occ"
+PROC test4k(VAL INT bootchan)
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF ANY out IS OUTPUT[bootchan] :
+  [512]INT vector :
+  PLACE vector AT 512 :
+  --{{{  PROC storetest
+  PROC storetest(VAL INT data, INT error)
+    SEQ
+      vector[0] := data
+      [vector FROM 1 FOR (SIZE vector)-1] := [vector FROM 0 FOR (SIZE vector)-1]
+      --{{{  test
+      INT i :
+      SEQ
+        i := 0
+        WHILE (i < (SIZE vector)) AND (error = 0)
+          SEQ
+            error := vector[i] >< data
+            i := i+1
+      --}}}
+  :
+  --}}}
+  INT error :
+  SEQ
+    error := 0
+    storetest(#55555555, error)
+    --{{{  test for error
+    VAL message IS "? BAD RAM, 5s" :
+    IF
+      error <> 0
+        out ! (INT16 (SIZE message))::message
+      TRUE
+        SKIP
+    --}}}
+    storetest(#AAAAAAAA, error)
+    --{{{  test for error
+    VAL message IS "? BAD RAM, As" :
+    IF
+      error <> 0
+        out ! (INT16 (SIZE message))::message
+      TRUE
+        SKIP
+    --}}}
+    VAL message IS "." :
+    out ! 1(INT16)::"."
+    GUY
+      OPR #1FF
+:
+
+--
+--  eof
+--

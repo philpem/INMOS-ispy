@@ -1,0 +1,125 @@
+-- Derived from recovered INMOS FTEST; later-revision address map.
+#INCLUDE "u805.occ"
+PROC test85in(VAL INT bootchan)
+  PROC IncT801a (BOOL Pass)
+  
+    --{{{  Comment
+    -- Test the incrementers which are visible to the datapath
+    -- Must demonstrate that each bit position of each incrementer
+    -- can change to high and to low as a result of a carry
+    -- Can not have both timer and Iptr test in same program, otherwise
+    -- timer interrupts  while executing at Mint.
+    
+    -- Only those parts not relating to hard channels are taken from the original
+    -- Inc test program.
+    
+    -- Better to put these into another SC. (Stack ?)
+    --}}}
+  
+    --{{{  Definitions and Declarations
+    VAL INT BitsInWord IS 32 :
+    VAL INT BPW        IS  4 :  -- BitsInWord / 8
+    
+    INT Result, Expected :
+                -- Used to compare a computed result against an expected value.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    
+      --{{{  Comment
+      -- Every Inc test requires a computed result to be tested against a known
+      -- or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected and resets result.
+      -- result is reset for the following reason. Some adjacent Inc tests
+      -- require the same expected values. If for any reason result failed to be
+      -- re-assigned the next test might indicate a pass irrespective of whether
+      -- the logic was functioning correctly.
+      --}}}
+    
+      IF
+        result = Expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE           -- Assume Device Okay Until Fault Found.
+      Result := #EEEEEEEE    -- Not one of the Expected Values.
+      --}}}
+      --{{{  WordIncDreg
+      SEQ i = 0 FOR BitsInWord
+        INT Source :
+        SEQ
+          Source := (1 << i) MINUS 1
+          Expected := Source PLUS BPW
+          GUY
+            LDL   Source
+            TESTSTD
+            --{{{  Step DIVloopAdd  -- causes WordIncDreg
+            OPR u.divloopadd
+            --}}}
+            LDC   0               -- clear Oreg after STEP
+            TESTLDD
+            STL Result
+          VerifyResult (Pass, Result, Expected)
+      --}}}
+      --{{{  WordIncOreg
+      --{{{  Comment
+      -- Use TESTincOreg, which jumps into Normalise; load Creg with
+      -- -1 to make it do NORMbitShLoop once, then at the end of the
+      -- instruction Creg contains Oreg >> BSelLn.
+      -- Oreg cannot be tested on T222b
+      --}}}
+      SEQ i = 0 FOR BitsInWord
+        INT Source :
+        SEQ
+          Source := (1 << i) MINUS 1
+          --{{{  Generate Expected Values
+          IF
+            i < 2
+              Expected := 1
+            TRUE
+              Expected := 1 << (i-2)
+          --}}}
+          GUY
+            LDC   #FFFFFFFF       -- load into Creg
+            LDC   0
+            LDL   Source
+            --{{{  TestincOreg      -- Causes WordIncOreg
+            OPR u.testincoreg
+            --}}}
+            ADD                   -- Breg := Creg
+            REV                   -- Areg := Creg
+            STL   Result
+          VerifyResult (Pass, Result, Expected)
+      --}}}
+  :
+  --}}}
+  CHAN OF ANY OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3 :
+  PLACE OUTPUT0 AT 0 :
+  PLACE OUTPUT1 AT 1 :
+  PLACE OUTPUT2 AT 2 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[bootchan] :
+  VAL mess IS "?Incrementer" :
+  VAL marker IS ":BEGIN Incrementer" :
+  VAL done IS "." :
+  [SIZE mess]BYTE message :
+  BOOL pass :
+  SEQ
+    out ! (INT16 (SIZE marker))::marker
+    message := mess
+    IncT801a(pass)
+    IF
+      pass
+        message[0] := ' '
+      TRUE
+        SKIP
+    out ! (INT16 (SIZE mess))::message
+    out ! (INT16 (SIZE done))::done
+    GUY
+      OPR #1FF
+:

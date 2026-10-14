@@ -1,0 +1,662 @@
+-- Derived from recovered INMOS FTEST; later-revision address map.
+#INCLUDE "u425.occ"
+PROC test45cm(VAL INT bootchan)
+  PROC CmuxT425a (BOOL Pass)
+  
+    --   This checks all the ConditionalMultiplexers not dependent on pins
+    -- and sets Pass accordingly.
+  
+    --{{{  Definitions and Declarations
+    VAL []INT TestArray IS [#00000000, #20000000, #40000000, #60000000] :
+      --   Under certain conditions exercising a conditional multiplexer produces
+      -- one of these values in the Status Register.
+    
+    INT Result :
+      --   This is used to compare a computed result against an expected value.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    
+      -- Every cmux test requires a computed result to be tested against a known
+      -- or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected and resets result.
+      -- result is reset for the following reason. Some adjacent Cmux1 tests
+      -- require the same expected values. If for any reason result failed to be
+      -- re-assigned the next test might indicate a pass irrespective of whether
+      -- the cmux was functioning correctly.
+    
+      SEQ
+    
+        IF
+          result = Expected
+            SKIP
+          TRUE
+            pass := FALSE
+    
+        result := #EEEEEEEE     -- Any value not occurring in TestArray.
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE                   -- Assume part okay until fault found.
+      Result := #EEEEEEEE            -- Any value not occurring in TestArray.
+      --{{{  Clear the Staus Register
+      GUY
+        LDC   0
+        TESTSTS               -- clear STATUSreg
+      --}}}
+      --}}}
+      --{{{  CMux0
+      --{{{  Cond0FromNotCarryOut               #B001
+      GUY
+        LDC   0               -- load Creg
+        LDC   0               -- load Breg
+        LDC   0               -- load Areg
+        --{{{  Step LSUMadd     -- Force NOT CarryOut
+        OPR u.lsumadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0               -- load Creg = 0
+        LDC   #FFFFFFFF       -- load Breg = -1
+        MINT                  -- load Areg = #80000000
+        --{{{  Step LSUMadd     -- Force CarryOut
+        OPR u.lsumadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      --}}}
+      --{{{  Cond0FromNotZbusSubLessThan0       #B010
+      GUY
+        LDC   0               -- load Creg
+        LDC   0               -- load Breg
+        LDC   0               -- load Areg
+        STEP GT               -- Force NOT ZbusSubLessThan0;
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      
+      GUY
+        LDC   0               -- load Creg
+        LDC   1               -- load Breg
+        LDC   0               -- load Areg
+        STEP GT               -- Force ZbusSubLessThan0;
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [2])
+      --}}}
+      --{{{  Cond0FromNotAluPropAll1            #B011
+      
+      --   Cond0FromNotZbusEq0     = Cond0FromNotAluPropAll1 ;
+      
+      GUY
+        LDC   1               -- load Areg
+        STEP SHL              -- Force NOT ZbusEq0;
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0               -- load Areg
+        STEP SHL              -- Force ZbusEq0;
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      --}}}
+      --{{{  Cond0FromOverflow                  #B100
+      -- Not Used.
+      -- Included for completeness.
+      --}}}
+      --{{{  Cond0FromNotIncOregCarryOut        #B101
+      GUY
+      
+        --    Cond0FromNotLastRead    = Cond0FromNotIncOregCarryOut
+      
+        LDC   0                        -- load Creg
+        LDC   0                        -- load Breg
+        LDC   0                        -- load Areg
+        --{{{  Step MOVEformWriteCount   -- Force NOT IncOregCarryOut
+        OPR u.moveformwritecount
+        --}}}
+        LDC   0                        -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      
+        -- cannot force IncOregCarryOut through single stepping, because
+        -- Oreg is used to form microword address; this is observable through
+        -- move1.hex to move12.hex.
+        -- If IncOregCarryOut is asserted in a single-stepped microword, then
+        -- the Oregister is loaded both from the incrementer and from the
+        -- next operand at the same time (ie Gnd and Vdd shorted through 2 NEs).
+      --}}}
+      --{{{  Cond0FromNotIncDregCarryOut        #B110
+      GUY
+      
+        --    Cond0FromNotLastWrite = Cond0FromNotIncDregCarryOut
+      
+        LDC   0                 -- load Areg
+        TESTSTD
+        --{{{  Step WCNTshiftPos  -- Force NOT IncDregCarryOut
+        OPR u.wcntshiftpos
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   #FFFFFFFF         -- load Areg
+        TESTSTD
+        --{{{  Step WCNTshiftPos  -- Force IncDregCarryOut
+        OPR u.wcntshiftpos
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      --}}}
+      --{{{  Cond0FromNotPrInAnalyse            #B111
+      -- Depends on whether AnalysePad has been asserted
+      -- Not relevant in this context.
+      --}}}
+      --}}}
+      --{{{  CMux1
+      --{{{  Cond1FromDivStep0                  #B0001
+      --{{{  Comment
+        -- DivStep0 = ~(aluCarryOut >< CslaveMSB)
+        -- use DIVloopAdd (Cond1FromDivStep0, Cond0FromNotIncDregCarryOut)
+        -- alu performs (Creg<<1) + Areg; test DivStep logic xor
+      --}}}
+      
+      GUY
+        LDC   0
+        TESTSTD               -- load Dreg
+        MINT                  -- load Creg #80000000
+        LDC   0               -- load Breg
+        LDC   0               -- load Areg
+        --{{{  StepDIVloopAdd   -- Force NOT DivStep0 : Creg[msb] & NOT AluCarryOut
+        OPR u.divloopadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0
+        TESTSTD               -- load Dreg
+        LDC   #70000000       -- load Creg
+        LDC   0               -- load Breg
+        MINT                  -- load Areg #80000000
+        --{{{  StepDIVloopAdd   -- Force NOT DivStep0 : NOT Creg[msb] & AluCarryOut
+        OPR u.divloopadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0
+        TESTSTD               -- load Dreg
+        LDC   0               -- load Creg
+        LDC   0               -- load Breg
+        LDC   0               -- load Areg
+        --{{{  StepDIVloopAdd   -- Force DivStep0 : NOT Creg[msb] & NOT AluCarryOut
+        OPR u.divloopadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      
+      GUY
+        LDC   0
+        TESTSTD               -- load Dreg
+        LDC   #F0000000       -- load Creg
+        LDC   0               -- load Breg
+        MINT                  -- load Areg #80000000
+        --{{{  StepDIVloopAdd   -- Force DivStep0 : Creg[msb] & AluCarryOut
+        OPR u.divloopadd
+        --}}}
+        LDC   0               -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --{{{  Cond1FromDivStep1                  #B0010
+      --{{{  Comment
+        -- DivStep1 = aluCarryOut >< CslaveMSB
+        -- use DIVloopSub (Cond1FromDivStep1, Cond0FromNotIncDregCarryOut)
+        -- alu performs (Creg<<1) - Areg; DivStep logic xor tested above
+      --}}}
+      
+      GUY
+        LDC   0
+        TESTSTD                 -- load Dreg
+        MINT                    -- load Creg #80000000
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step DIVloopSub    -- Force NOT DivStep1 : Creg[msb] & AluCarryOut
+        OPR u.divloopsub
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0
+        TESTSTD                 -- load Dreg
+        LDC   0                 -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step DIVloopSub    -- Force DivStep1 : NOT Creg[msb] & AluCarryOut
+        OPR u.divloopsub
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --{{{  Cond1FromAslave0                   #B0011
+      GUY
+        LDC   0                 -- load Areg
+        STEP PROD               -- Force NOT Aslave0;
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY
+        LDC   1                 -- load Areg
+        STEP PROD               -- Force Aslave0;
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [2])
+      --}}}
+      --{{{  Cond1FromBslave0                   #B0100
+      GUY
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MulinitLoop   -- Force NOT Bslave0
+        OPR u.mulinitloop
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   1                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MulinitLoop   -- Force Bslave0
+        OPR u.mulinitloop
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --{{{  Cond1fromBslave1                   #B0101
+      GUY
+        LDC   0
+        TESTSTD                 -- load Dreg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MULshift      -- Force NOT Bslave1
+        OPR u.mulshift
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        LDC   0
+        TESTSTD                 -- load Dreg
+        LDC   2                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MULshift      -- Force Bslave1
+        OPR u.mulshift
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --{{{  Cond1FromBslaveMsb                 #B0110
+      GUY
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step WCNTtestSign  -- Force NOT BslaveMSB
+        OPR u.wcnttestsign
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY
+        MINT                    -- load Breg #80000000
+        LDC   0                 -- load Areg
+        --{{{  Step WCNTtestSign  -- Force BslaveMSB
+        OPR u.wcnttestsign
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --{{{  Cond1FromCslaveMsb                 #B0111
+      GUY
+        LDC   0                 -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Force NOT CslaveMSB
+        OPR u.normbitshloop
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY
+        MINT                    -- load Creg #80000000
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Force CslaveMSB
+        OPR u.normbitshloop
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [2])
+      --}}}
+      --{{{  Cond1FromNotTwoReadsToStart        #B1000
+      --{{{  Comment
+        -- TwoReadsToStart := SB > DB    (Creg=Source, Breg=Dest)
+        -- MOVEintr overwrites STATUS, preserving stale condition bits.
+        -- Use MOVEformWriteCount, which does not write STATUS, and inspect
+        -- only Cond1: this replacement selects a different Cond0 input.
+      --}}}
+      GUY
+        LDC   0
+        TESTSTD                 -- initialise scratch incrementer state
+        LDC   0                 -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MOVEformWriteCount      -- Force NOT TwoReadsToStart
+        OPR u.moveformwritecount
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        LDC   0
+        TESTSTS                 -- clear MoveBit
+        TESTLDS
+        STL   Result
+      Result := Result /\ #40000000
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY
+        LDC   0
+        TESTSTD                 -- initialise scratch incrementer state
+        LDC   1                 -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step MOVEformWriteCount      -- Force TwoReadsToStart
+        OPR u.moveformwritecount
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        LDC   0
+        TESTSTS                 -- clear MoveBit
+        TESTLDS
+        STL   Result
+      Result := Result /\ #40000000
+      VerifyResult (Pass, Result, TestArray [0])
+      --}}}
+      --{{{  Cond1FromProcPriority              #B1001
+      GUY                       -- ****     Change to high priority    ****
+        LDLP  0
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescH -- Make High Priority
+        OPR u.gajwnewwdesch
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        -- check that priority bit is sensitive to being reset and set
+        -- now at high priority
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY                       -- ****     Change to high priority    ****
+        LDLP  0
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescL -- Make Low Priority
+        OPR u.gajwnewwdescl
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        -- check that priority bit is sensitive to being reset and set
+        -- now at low priority
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [2])
+      --}}}
+      --{{{  Cond1FromChOrTimerReq              #B1011
+        -- Only used in idle loop (SNPdoBusyWait).
+        --
+        -- If SNPdoBusyWait is stepped, then single step bit is set, and forces
+        -- processor to low priority; therefore timer interrupts and is single
+        -- stepped, clearing the alarm and using Dreg and Ereg.
+      
+      --}}}
+      --{{{  Cond1FromChNotTimerReq             #B1100
+      GUY
+        -- check ChNotTimerReq is not stuck high;
+        --{{{  Step START1stByteWait
+        OPR u.start1stbytewait
+        --}}}
+        LDC   0                    -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+        -- check ChNotTimerReq not high for timer req;
+      GUY                       -- ****     Change to high priority    ****
+        LDLP  0
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescH -- Make High Priority
+        OPR u.gajwnewwdesch
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+      
+        -- set low timer alarm
+        LDC   #1234
+        STTIMER
+        LDC   #1235
+        STEP GAJW               -- DATAreg := Areg
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step INSnextLT     -- LTIMERreg := DATAreg and Enable Alarm
+        OPR u.insnextlt
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step START1stByteWait
+        OPR u.start1stbytewait
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+        -- timer interrupt routine will clear alarm, but there must be
+        -- a valid timer to run; therefore force a timer disable to
+        -- remove the alarm.
+      GUY                       -- ****     Change to low priority    ****
+        --{{{  Step INSendLTaddr  -- Disable Low Priority Timer.
+        OPR u.insendltaddr
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        LDL   0                 -- cause LTimerPtr Read in INSendLTaddr to finish
+        LDLP  0
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescL -- Make Low Priority
+        OPR u.gajwnewwdescl
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+      --}}}
+      --{{{  Cond1FromHighNotLowReq             #B1101
+      --{{{  Comment
+        -- cannot make high priority request without it being
+        -- serviced; can make low priority request at high priority.
+      --}}}
+      GUY
+        -- check HighNotLowReq is not stuck high;
+        --{{{  Step INStestIntr
+        OPR u.instestintr
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+        -- check HighNotLowReq not high for low pr req;
+      GUY                       -- ****     Change to high priority    ****
+        LDLP  0
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescH -- Make High Priority
+        OPR u.gajwnewwdesch
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        -- set low timer alarm
+        LDC   #4453
+        STTIMER
+        LDC   #7786
+        STEP GAJW               -- DATAreg := Areg
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step INSnextLT     -- LTIMERreg := DATAreg and Enable Alarm
+        OPR u.insnextlt
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step INStestIntr
+        OPR u.instestintr
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [0])
+      
+        -- timer interrupt routine will clear alarm, but there must be
+        -- a valid timer to run; therefore force a timer disable to
+        -- remove the alarm.
+      GUY
+        --{{{  Step INSendLTaddr  -- Disable Low Priority Timer.
+        OPR u.insendltaddr
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        LDL   0                 -- cause LTimerPtr Read in INSendLTaddr to finish
+        LDLP  0                 -- ****     Change to low priority    ****
+        STEP GAJW
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  Step GAJWnewWdescL -- Make Low Priority
+        OPR u.gajwnewwdescl
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+      --}}}
+      --{{{  Cond1FromBootFromRomNotLinks       #B1010
+        -- Dependent upon BootFromRomPin.
+        -- Not relevant in this context.
+      --}}}
+      --{{{  Cond1FromChannelReadyNotRun        #B1110
+        -- Need hard channel message and ALT to test ReadyNotRun logic.
+        -- Not relevant in this context.
+      --}}}
+      --{{{  Cond1FromTimeOutReq                #B1111
+      --{{{  Comment
+        -- can single step J;
+        -- must have two negative edges on CLOCKslave[9] to set time out
+      --}}}
+      GUY                       -- first ensure that time out latch is reset
+        --{{{  Step SNPlow        -- ResetTimeOut
+        OPR u.snplow
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        --{{{  TESTstepTimeOut
+        OPR u.teststeptimeout
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY                       -- Force time out
+        LDC   #FFFFFFFF
+        STTIMER
+        LDC   0
+        STTIMER
+        LDC   #FFFFFFFF
+        STTIMER
+        LDC   0
+        STTIMER
+        --{{{  TESTstepTimeOut
+        OPR u.teststeptimeout
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, TestArray [3])
+      --}}}
+      --}}}
+      --{{{  Clear the Status Register
+      GUY
+        LDC   0
+        TESTSTS               -- clear STATUSreg
+      --}}}
+  :
+  --}}}
+  --{{{  PROC StackT425a (BOOL Pass)
+  CHAN OF ANY OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3 :
+  PLACE OUTPUT0 AT 0 :
+  PLACE OUTPUT1 AT 1 :
+  PLACE OUTPUT2 AT 2 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[bootchan] :
+  VAL mess IS "?Conditional Mux" :
+  VAL marker IS ":BEGIN Conditional Mux" :
+  VAL done IS "." :
+  [SIZE mess]BYTE message :
+  BOOL pass :
+  SEQ
+    out ! (INT16 (SIZE marker))::marker
+    message := mess
+    CmuxT425a(pass)
+    IF
+      pass
+        message[0] := ' '
+      TRUE
+        SKIP
+    out ! (INT16 (SIZE mess))::message
+    out ! (INT16 (SIZE done))::done
+    GUY
+      OPR #1FF
+:

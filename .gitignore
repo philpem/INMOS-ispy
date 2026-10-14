@@ -1,6 +1,7 @@
 *.o
 ispy
 mtest
+ftest
 
 # Generated occam code-blob headers and build scratch
 build/

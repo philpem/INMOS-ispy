@@ -43,6 +43,11 @@ char *PROGRAM_NAME = "ispy";
 #include <stdlib.h>
 #include "linkio.h"
 
+#ifdef RISCOS
+#ifndef DEFAULTLINK
+#define DEFAULTLINK "TMB"
+#endif
+#else
 /* for isatty */
 #ifdef MSDOS
 #include <io.h>
@@ -51,8 +56,8 @@ char *PROGRAM_NAME = "ispy";
 #include <unistd.h>
 #endif
 #endif
+#endif /* !RISCOS */
 #include <ctype.h>
-#include <malloc.h>
 #include <string.h>
 
 #include "inmos.h"
@@ -91,7 +96,12 @@ void Usage(void)
 	printf(" %ccr       :  reset all C004s found\n", SWITCHAR);
 	printf(" %ccs       :  set all C004s in filename\n", SWITCHAR);
 	printf(" %cl <name> :  use this link, else TRANSPUTER envr. var, else %s\n", SWITCHAR, DEFAULTLINK);
-	printf(" %cx        :  Ignores any file piped in to %s\n", SWITCHAR, PROGRAM_NAME);
+	printf(" %cf <file> :  read the network template from this file\n", SWITCHAR);
+	printf(" %cp        :  read the network template from stdin\n", SWITCHAR);
+	printf(" %cx        :  ignore any network template\n", SWITCHAR);
+#ifdef RISCOS
+	printf("              Without -f or -p, discover without an input template.\n");
+#endif
 	printf(" %ci        :  Information - gives progress reports\n", SWITCHAR);
 	printf(" %ch        :  This help page\n\n", SWITCHAR);
 	printf( "                                     %s\n",     AUTRONICA);
@@ -139,12 +149,13 @@ struct tpstats *root;
 LINK            TheLink;
 char            LinkName[64];
 char            FileName[256];
+static const char *TemplateFile = NULL;
+static int TemplateStdin = FALSE;
 
 const char *byte_to_binary(int x) {
     static char b[9];
-    b[0] = '\0';
-
     int z;
+    b[0] = '\0';
     for (z = 128; z > 0; z >>= 1) {
         strcat(b, ((x & z) == z) ? "1" : "0");
     }
@@ -447,7 +458,7 @@ getstats(struct tpstats *p) {
 struct c004reset {
     struct c004reset *next;
     int length;
-    unsigned char path[];
+    unsigned char *path;
 };
 
 int firstc004reset(struct c004reset **seen, struct tpstats *p, int link)
@@ -458,6 +469,7 @@ int firstc004reset(struct c004reset **seen, struct tpstats *p, int link)
     for (node = p; node->parent != NULL; node = node->parent) length++;
     record = Malloc(sizeof(*record) + length);
     record->length = length;
+    record->path = (unsigned char *)(record + 1);
     record->path[0] = (unsigned char)link;
     for (node = p; node->parent != NULL; node = node->parent)
         record->path[i++] = (unsigned char)node->route;
@@ -626,7 +638,7 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
             INFO((", CPU type\n"));
         }
 
-        //printf("finding type\n");
+        /* printf("finding type\n"); */
         p-> tptype = findtype();
         if (information) {
             writeup(p, 0, information);
@@ -932,6 +944,16 @@ void getparams(int argc, char *argv[],
 		++argv;
 		strcpy(LinkName, *argv);
 		break;
+	    case 'f':
+	    case 'F':
+		if (argc-- == 1)
+		    AbortExit(PROGRAM_NAME, "file name missing after the F option");
+		TemplateFile = *++argv;
+		break;
+	    case 'p':
+	    case 'P':
+		TemplateStdin = TRUE;
+		break;
 	    case 'x':
 	    case 'X':
 		*kong = FALSE;
@@ -989,6 +1011,25 @@ void getparams(int argc, char *argv[],
     }
 }
 /*}}}  */
+/* Select an input template without relying on Unix stream internals. */
+static FILE *template_input(void)
+{
+    FILE *input;
+    if (TemplateFile != NULL) {
+        input = fopen(TemplateFile, "r");
+        if (input == NULL)
+            AbortExit(PROGRAM_NAME, "cannot open network template %s", TemplateFile);
+        return input;
+    }
+    if (TemplateStdin)
+        return stdin;
+#ifndef RISCOS
+    if (!isatty(fileno(stdin)))
+        return stdin;
+#endif
+    return NULL;
+}
+
 /*{{{  sort */
 struct tpstats *sort(struct tpstats * root)
 {
@@ -1218,7 +1259,9 @@ void            setC004(struct c4stats * p)
     }
     /* Validate the entire map before changing the switch. */
     {
-        unsigned char reset[2] = {4, (unsigned char) p->route};
+        unsigned char reset[2];
+        reset[0] = 4;
+        reset[1] = (unsigned char) p->route;
         setroute(TheLink, p->parent, 4);    /* application */
         if (!sendiserver(TheLink, 2, reset))
             AbortExit(PROGRAM_NAME, "C004 %d failed to reset", p->tpid);
@@ -1246,18 +1289,25 @@ int main(int argc, char *argv[]) {
 	      &subsys, &c4read, &c4reset, &c4set,
 	      &kong, &do_reset, &information);
 
-	if (kong) {
-    	if (!isatty(fileno(stdin))) { 
-			if (information) {
-				INFO(("# Reading input template\n"));
-			}
-			transputers = lex(stdin, &reference, Pipe, LinkName, Banner);
-		} else {
-			kong = FALSE;
-			c4set = FALSE;
-		}
-	} else {
-		c4set = FALSE;
+    if (TemplateFile != NULL && TemplateStdin)
+        AbortExit(PROGRAM_NAME, "use either -f or -p for the network template");
+    if (kong) {
+        FILE *input = template_input();
+        if (input != NULL) {
+            if (information) {
+                INFO(("# Reading input template\n"));
+            }
+            transputers = lex(input, &reference, Pipe, LinkName, Banner);
+            if (ferror(input))
+                AbortExit(PROGRAM_NAME, "error reading network template");
+            if (input != stdin)
+                fclose(input);
+        } else {
+            kong = FALSE;
+            c4set = FALSE;
+        }
+    } else {
+        c4set = FALSE;
     }
 
     /*  try to open link  */

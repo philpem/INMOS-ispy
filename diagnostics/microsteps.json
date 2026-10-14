@@ -1,0 +1,377 @@
+{
+  "families": [
+    {
+      "name": "T801B/T805D/G",
+      "reference": "t800d",
+      "revisions": [
+        "t801b",
+        "t805d",
+        "t805g"
+      ],
+      "operations": {
+        "divloopadd": {
+          "reference": 293,
+          "address": 457,
+          "step": true
+        },
+        "divloopsub": {
+          "reference": 295,
+          "address": 459,
+          "step": true
+        },
+        "mulinitloop": {
+          "reference": 629,
+          "address": 575,
+          "step": true
+        },
+        "mulshift": {
+          "reference": 265,
+          "address": 197,
+          "step": true
+        },
+        "wcnttestsign": {
+          "reference": 717,
+          "address": 631,
+          "step": true
+        },
+        "normbitshloop": {
+          "reference": 241,
+          "address": 357,
+          "step": true
+        },
+        "moveintr": {
+          "reference": 223,
+          "address": 230,
+          "step": true
+        },
+        "gajwnewwdesch": {
+          "reference": 313,
+          "address": 305,
+          "step": true
+        },
+        "gajwnewwdescl": {
+          "reference": 315,
+          "address": 307,
+          "step": true
+        },
+        "start1stbytewait": {
+          "reference": 400,
+          "address": 104,
+          "step": true
+        },
+        "insnextlt": {
+          "reference": 430,
+          "address": 262,
+          "step": true
+        },
+        "insendltaddr": {
+          "reference": 419,
+          "address": 306,
+          "step": true
+        },
+        "instestintr": {
+          "reference": 420,
+          "address": 210,
+          "step": true
+        },
+        "snplow": {
+          "reference": 459,
+          "address": 270,
+          "step": true
+        },
+        "teststeptimeout": {
+          "reference": 411,
+          "address": 411,
+          "step": true
+        },
+        "lsumadd": {
+          "reference": 252,
+          "address": 374,
+          "step": true
+        },
+        "moveformwritecount": {
+          "reference": 656,
+          "address": 568,
+          "step": true
+        },
+        "wcntshiftpos": {
+          "reference": 101,
+          "address": 329,
+          "step": true
+        },
+        "divlastbit1": {
+          "reference": 294,
+          "address": 458,
+          "step": true
+        },
+        "normcountshift": {
+          "reference": 249,
+          "address": 371,
+          "step": true
+        },
+        "normbitshend": {
+          "reference": 243,
+          "address": 359,
+          "step": true
+        },
+        "lmulshiftadd": {
+          "reference": 259,
+          "address": 447,
+          "step": true
+        },
+        "mulshiftadd": {
+          "reference": 267,
+          "address": 199,
+          "step": true
+        },
+        "distendamfalse": {
+          "reference": 316,
+          "address": 403,
+          "step": true
+        },
+        "jsetshare": {
+          "reference": 431,
+          "address": 100,
+          "step": true
+        },
+        "outsoftinputrdy": {
+          "reference": 194,
+          "address": 98,
+          "step": true
+        },
+        "distdelintsetst": {
+          "reference": 331,
+          "address": 431,
+          "step": true
+        },
+        "insintsetst": {
+          "reference": 427,
+          "address": 275,
+          "step": true
+        },
+        "distdelgotoinsstatus": {
+          "reference": 608,
+          "address": 573,
+          "step": true
+        },
+        "divresignb": {
+          "reference": 297,
+          "address": 454,
+          "step": true
+        },
+        "discsetamfalse": {
+          "reference": 304,
+          "address": 438,
+          "step": true
+        },
+        "testincoreg": {
+          "reference": 483,
+          "address": 483,
+          "step": false
+        }
+      },
+      "symbolic_steps": {
+        "GAJW": 60,
+        "GT": 9,
+        "PROD": 8,
+        "SHL": 65,
+        "OUTBYTE": 14,
+        "SETHALTERR": 88,
+        "SB": 59
+      },
+      "include": "u805",
+      "condition_checks": {
+        "moveformwritecount": {
+          "mux": 1,
+          "selector": 8
+        }
+      }
+    },
+    {
+      "name": "T425B/C",
+      "reference": "t425a",
+      "revisions": [
+        "t425b",
+        "t425c"
+      ],
+      "operations": {
+        "lsumadd": {
+          "reference": 254,
+          "address": 366,
+          "step": true
+        },
+        "moveformwritecount": {
+          "reference": 676,
+          "address": 560,
+          "step": true
+        },
+        "wcntshiftpos": {
+          "reference": 101,
+          "address": 305,
+          "step": true
+        },
+        "divloopadd": {
+          "reference": 297,
+          "address": 445,
+          "step": true
+        },
+        "divloopsub": {
+          "reference": 299,
+          "address": 447,
+          "step": true
+        },
+        "mulinitloop": {
+          "reference": 649,
+          "address": 566,
+          "step": true
+        },
+        "mulshift": {
+          "reference": 265,
+          "address": 153,
+          "step": true
+        },
+        "wcnttestsign": {
+          "reference": 739,
+          "address": 616,
+          "step": true
+        },
+        "normbitshloop": {
+          "reference": 248,
+          "address": 337,
+          "step": true
+        },
+        "moveintr": {
+          "reference": 226,
+          "address": 198,
+          "step": true
+        },
+        "gajwnewwdesch": {
+          "reference": 332,
+          "address": 281,
+          "step": true
+        },
+        "gajwnewwdescl": {
+          "reference": 334,
+          "address": 283,
+          "step": true
+        },
+        "start1stbytewait": {
+          "reference": 416,
+          "address": 104,
+          "step": true
+        },
+        "insnextlt": {
+          "reference": 443,
+          "address": 234,
+          "step": true
+        },
+        "insendltaddr": {
+          "reference": 442,
+          "address": 282,
+          "step": true
+        },
+        "instestintr": {
+          "reference": 432,
+          "address": 170,
+          "step": true
+        },
+        "snplow": {
+          "reference": 482,
+          "address": 246,
+          "step": true
+        },
+        "teststeptimeout": {
+          "reference": 411,
+          "address": 411,
+          "step": true
+        },
+        "divlastbit1": {
+          "reference": 298,
+          "address": 446,
+          "step": true
+        },
+        "normcountshift": {
+          "reference": 247,
+          "address": 359,
+          "step": true
+        },
+        "normbitshend": {
+          "reference": 250,
+          "address": 339,
+          "step": true
+        },
+        "lmulshiftadd": {
+          "reference": 263,
+          "address": 439,
+          "step": true
+        },
+        "mulshiftadd": {
+          "reference": 267,
+          "address": 155,
+          "step": true
+        },
+        "distendamfalse": {
+          "reference": 314,
+          "address": 395,
+          "step": true
+        },
+        "jsetshare": {
+          "reference": 466,
+          "address": 102,
+          "step": true
+        },
+        "outsoftinputrdy": {
+          "reference": 196,
+          "address": 100,
+          "step": true
+        },
+        "distdelintsetst": {
+          "reference": 331,
+          "address": 419,
+          "step": true
+        },
+        "insintsetst": {
+          "reference": 439,
+          "address": 251,
+          "step": true
+        },
+        "distdelgotoinsstatus": {
+          "reference": 631,
+          "address": 683,
+          "step": true
+        },
+        "divresignb": {
+          "reference": 291,
+          "address": 431,
+          "step": true
+        },
+        "discsetamfalse": {
+          "reference": 306,
+          "address": 426,
+          "step": true
+        },
+        "testincoreg": {
+          "reference": 483,
+          "address": 483,
+          "step": false
+        }
+      },
+      "symbolic_steps": {
+        "GAJW": 60,
+        "GT": 9,
+        "PROD": 8,
+        "SHL": 65,
+        "OUTBYTE": 14,
+        "SETHALTERR": 88,
+        "SB": 59
+      },
+      "include": "u425",
+      "condition_checks": {
+        "moveformwritecount": {
+          "mux": 1,
+          "selector": 8
+        }
+      }
+    }
+  ]
+}

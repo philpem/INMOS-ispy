@@ -1,0 +1,213 @@
+-- Derived from recovered INMOS FTEST; later-revision address map.
+#INCLUDE "u805.occ"
+PROC test85co(VAL INT bootchan)
+  PROC ConstT801a (BOOL Pass)
+  
+    -- demonstrate that all the bits in the constants box can be
+    -- individually and collectively set.
+  
+    --{{{  Declaration
+    INT Result :
+      -- This is used to compare a computed result against an expected value.
+    VAL BOOL Dont.Mask IS FALSE :
+    VAL BOOL Do.Mask   IS TRUE :
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT Expected,
+                       VAL BOOL mask.bits)
+    
+      -- Every Const test requires a computed result to be tested against a known
+      -- Constant. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected.
+    
+      SEQ
+        IF
+          mask.bits
+            result := result /\ #9FFFFFFF
+          TRUE
+            SKIP
+        IF
+          result = Expected
+            SKIP
+          TRUE
+            pass := FALSE
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE           -- Assume Device Okay Until Fault Found.
+      Result := #EEEEEEEE    -- Not one of the known constants.
+      --}}}
+      --{{{  XbusFromMachineFALSE    Value = #00000000
+      GUY
+        LDC   #FFFFFFFF
+        --{{{  Step DISTendAmFALSE -- Areg := 0
+        OPR u.distendamfalse
+        --}}}
+        LDC   0                  -- clear Oreg and push stack
+        STL   Result             -- pop stack
+        STL   Result
+      VerifyResult (Pass, Result, #00000000, Dont.Mask)
+      --}}}
+      --{{{  BbusFrom1               Value = #00000001
+      GUY
+        LDC   #FFFFFFFF
+        STEP OUTBYTE            -- Areg := 1
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop stack
+        STL   Result
+      VerifyResult (Pass, Result, #00000001, Dont.Mask)
+      --}}}
+      --{{{  XbusFromGoToSNPBit      Value = #00000002
+      GUY
+        LDC   0
+        TESTSTS
+        --{{{  Step JsetShare     -- STATUSreg := GoToSNPBit
+        OPR u.jsetshare
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000002, Do.Mask)
+      --}}}
+      --{{{  XBusFromIOBit           Value = #00000004
+      GUY
+        LDC   0
+        TESTSTS
+        --{{{  Step OUTsoftInputRdy -- STAUSreg := IOBit
+        OPR u.outsoftinputrdy
+        --}}}
+        LDC   0                   -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000004, Do.Mask)
+      --}}}
+      --{{{  XbusFromMoveBit         Value = #00000008
+      GUY
+        LDC   0
+        TESTSTS
+        LDC   0                 -- define stack to make
+        LDC   0                 -- TwoReadsToStart always
+        LDC   0                 -- consistent in MOVEintr
+        --{{{  MOVEintr           -- STATUSreg := MoveBit
+        OPR u.moveintr
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000008, Do.Mask)
+      --}}}
+      --{{{  XbusFromTimeDelBit      Value = #00000010
+      GUY
+        LDC   0
+        TESTSTS
+        --{{{  Step DISTdelIntSetST -- STATUSreg := TimeDelBit
+        OPR u.distdelintsetst
+        --}}}
+        LDC   0                   -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000010, Do.Mask)
+      --}}}
+      --{{{  XbusFromTimeInsBit      Value = #00000020
+      GUY
+        LDC   0
+        TESTSTS
+        --{{{  Step INSintSetST   -- STATUSreg := TimeInsBit
+        OPR u.insintsetst
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000020, Do.Mask)
+      --}}}
+      --{{{  XbusfromDistAndInsbit   Value = #00000040
+      GUY
+        LDC   0
+        TESTSTS
+        --{{{  Step DISTdelGoToInsSTATUS -- STATUSreg := DistAndInsBit
+        OPR u.distdelgotoinsstatus
+        --}}}
+        LDC   0                        -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000040, Do.Mask)
+      --}}}
+      --{{{  XbusFromHaltOnErrorBit  Value = #00000080
+      GUY
+        LDC   0
+        TESTSTS
+        STEP SETHALTERR         -- STATUSreg := HaltOnErrorBit
+        LDC   0                 -- clear Oreg and push stack
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #00000080, Do.Mask)
+      --}}}
+      --{{{  XbusFromErrorBit        Value = #80000000
+      GUY
+        LDC   0
+        TESTSTS
+        SETERR                  -- STATUSreg := ErrorBit
+        TESTLDS
+        STL   Result
+      VerifyResult (Pass, Result, #80000000, Do.Mask)
+      --}}}
+      --{{{  XbusFromMinus1          Value = #FFFFFFFF
+      GUY
+        LDC   0                 -- Breg := 0
+        LDC   0                 -- Areg := 0
+        --{{{  Step DIVresignB    -- Breg := (~Minus1) - Breg
+        OPR u.divresignb
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop stack
+        OR                      -- Areg := Breg \/ Areg
+        NOT                     -- Areg := ~Areg
+        STL   Result            -- write Minus1
+      VerifyResult (Pass, Result, #FFFFFFFF, Dont.Mask)
+      --}}}
+      --{{{  YbusFromMachineFALSE    Value = #00000000
+      GUY
+        LDC #FFFFFFFF
+        --{{{  Step DISCsetAmFALSE -- Areg := 0
+        OPR u.discsetamfalse
+        --}}}
+        LDC   0                  -- clear Oreg and push stack
+        STL   Result             -- pop stack
+        STL   Result
+      VerifyResult (Pass, Result, #00000000, Dont.Mask)
+      --}}}
+      --{{{  Clear Status Register
+      GUY
+        LDC   0
+        TESTSTS
+      --}}}
+  :
+  --}}}
+  --{{{  PROC IncT801a   (BOOL Pass)
+  CHAN OF ANY OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3 :
+  PLACE OUTPUT0 AT 0 :
+  PLACE OUTPUT1 AT 1 :
+  PLACE OUTPUT2 AT 2 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[bootchan] :
+  VAL mess IS "?Constants" :
+  VAL marker IS ":BEGIN Constants" :
+  VAL done IS "." :
+  [SIZE mess]BYTE message :
+  BOOL pass :
+  SEQ
+    out ! (INT16 (SIZE marker))::marker
+    message := mess
+    ConstT801a(pass)
+    IF
+      pass
+        message[0] := ' '
+      TRUE
+        SKIP
+    out ! (INT16 (SIZE mess))::message
+    out ! (INT16 (SIZE done))::done
+    GUY
+      OPR #1FF
+:

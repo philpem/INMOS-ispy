@@ -1,0 +1,251 @@
+--{{{  PROC router
+PROC router(VAL INT bootchan, CHAN OF ANY to.application, from.application)
+  --{{{  hard CHANs, INPUT and OUTPUT
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF ANY INPUT0 :
+  PLACE INPUT0 AT 4 :
+  CHAN OF ANY INPUT1 :
+  PLACE INPUT1 AT 5 :
+  CHAN OF ANY INPUT2 :
+  PLACE INPUT2 AT 6 :
+  CHAN OF ANY INPUT3 :
+  PLACE INPUT3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [INPUT0, INPUT1, INPUT2, INPUT3] :
+  CHAN OF ANY COMMAND IS INPUT[bootchan] :
+  --}}}
+  --{{{  VALs
+  VAL passing IS 0(BYTE):
+  VAL booting IS 1(BYTE):
+  VAL special IS 1(BYTE):
+  --}}}
+  --{{{  PROC pass.packet, expects length to have been input
+  PROC pass.packet(CHAN OF ANY input, output, INT length, VAL BYTE status)
+    SEQ
+      IF
+        status = booting
+          SKIP
+        TRUE
+          output ! (INT16 length)
+      CHAN OF INT::[]BYTE buf:
+      PAR
+        --{{{  input buffer proc
+        [size.segment]BYTE buffer :
+        SEQ
+          WHILE length > 0
+            IF
+              --{{{  block too big
+              length > size.segment
+                SEQ
+                  input ? buffer
+                  buf ! size.segment::buffer
+                  length := length - size.segment
+              --}}}
+              --{{{  block fits
+              TRUE
+                SEQ
+                  input ? [buffer FROM 0 FOR length]
+                  buf ! length::buffer
+                  length := 0
+              --}}}
+          buf ! 0::buffer
+        --}}}
+        --{{{  output buffer proc
+        [size.segment]BYTE buffer :
+        INT length :
+        SEQ
+          length := 1
+          WHILE length > 0
+            SEQ
+              buf ? length::buffer
+              IF
+                length>0
+                  output ! [buffer FROM 0 FOR length]
+                TRUE
+                  SKIP
+        --}}}
+  :
+  --}}}
+  CHAN OF INT steer :
+  PAR
+    --{{{  stuff from root
+    --{{{  DECLs
+    [4]BYTE tag :  -- 0 is scratch, 1 is mode, 2 is path, 3 is special
+    INT16 len :
+    INT length :
+    --}}}
+    SEQ
+      tag[1] := passing
+      WHILE TRUE
+        CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+        SEQ
+          COMMAND ? len
+          length := (INT len)
+          IF
+            --{{{  escape
+            length = (INT ESCAPE)
+              SEQ
+                COMMAND ? tag[0]
+                IF
+                  --{{{  setpath, possibly stop
+                  tag[0] = TAG.SETPATH
+                    SEQ
+                      COMMAND ? len; tag[2]
+                      length := (INT len)-1
+                      tag[1] := passing
+                      IF
+                        --{{{  stop
+                        tag[2] = TAG.HALT
+                          --{{{  HARD chan DECLs
+                          [4]CHAN OF ANY INPUT :
+                          PLACE INPUT AT 4 :
+                          --}}}
+                          SEQ
+                            --{{{  reset channels
+                            SEQ i = 1 FOR 3
+                              VAL thischan IS (i+bootchan)\4 :
+                              CHAN OF ANY inchan  IS INPUT[thischan] :
+                              CHAN OF ANY outchan IS OUTPUT[thischan] :
+                              SEQ
+                                ASM
+                                  LDLP inchan
+                                  RESETCH
+                                  LDLP outchan
+                                  RESETCH
+                            --}}}
+                            INT memstart :
+                            BYTE len :
+                            [4]BYTE bootstart :
+                            SEQ
+                              --{{{  find memstart
+                              ASM
+                                MINT
+                                LDNLP 18  -- memstart ?
+                                STL memstart
+                                LDL memstart
+                                LDLP bootstart
+                                LDC 4
+                                MOVE
+                              VAL [4]BYTE STARTBOOT IS [$25(BYTE), $0A(BYTE), $21(BYTE), $F5(BYTE)] :
+                              IF
+                                IF i = 0 FOR 4
+                                  STARTBOOT[i]<>bootstart[i]
+                                    SEQ
+                                      GUY
+                                        LDL memstart
+                                        LDNLP 10
+                                        STL memstart
+                                TRUE
+                                  SKIP
+                              --}}}
+                              --{{{  boot
+                              COMMAND ? len
+                              ASM
+                                LDL memstart
+                                LDLP COMMAND
+                                LDL len
+                                IN
+                                LDLP COMMAND     -- boot link
+                                LDL len
+                                ADC 3           -- round up to word
+                                LDC 1
+                                BCNT
+                                NOT
+                                ADC 1
+                                AND
+                                LDL memstart
+                                ADD             -- Wptr
+                                LDL memstart    -- for GCALL
+                                REV
+                                GAJW
+                                REV             -- memstart
+                                GCALL
+                              --}}}
+                        --}}}
+                        TRUE
+                          SEQ
+                            steer ! (INT tag[2])  -- for inputter
+                            IF
+                              --{{{  length = 0
+                              length = 0
+                                tag[3] := special
+                              --}}}
+                              --{{{  otherwise
+                              TRUE
+                                CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+                                SEQ
+                                  tag[3] := 0(BYTE) -- non-special
+                                  NEXT ! ESCAPE; TAG.SETPATH
+                                  pass.packet(COMMAND, NEXT, length, passing)
+                              --}}}
+                  --}}}
+                  --{{{  I'm not special, following IFs are special
+                  tag[3] <> special
+                    NEXT ! ESCAPE; tag[0]
+                  --}}}
+                  --{{{  boot
+                  tag[0] = TAG.BOOT
+                    SEQ
+                      tag[1] := booting  -- set boot mode
+                      steer ! 4
+                  --}}}
+            --}}}
+            TRUE
+              IF
+                tag[2] = 4(BYTE)
+                  pass.packet(COMMAND, to.application, length, tag[1])
+                TRUE
+                  pass.packet(COMMAND, NEXT, length, tag[1])
+    --}}}
+    --{{{  return messages
+    INT inlink :
+    BOOL guard :
+    SEQ
+      guard := FALSE
+      inlink := 4
+      WHILE TRUE
+        INT16 len :
+        INT length :
+        IF
+          inlink = 4
+            ALT
+              --{{{  from application
+              (inlink=4) & from.application ? len
+                SEQ
+                  length := (INT len)
+                  pass.packet(from.application, OUTPUT[bootchan], length, passing)
+              --}}}
+              --{{{  steering
+              steer ? inlink
+                IF
+                  inlink < 4
+                    guard := TRUE
+                  TRUE
+                    guard := FALSE
+              --}}}
+          inlink < 4
+            ALT
+              --{{{  from link
+              guard & INPUT[inlink] ? len
+                SEQ
+                  length := (INT len)
+                  pass.packet(INPUT[inlink], OUTPUT[bootchan], length, passing)
+              --}}}
+              --{{{  steering
+              steer ? inlink
+                IF
+                  inlink < 4
+                    guard := TRUE
+                  TRUE
+                    guard := FALSE
+              --}}}
+    --}}}
+:
+--}}}

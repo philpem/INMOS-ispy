@@ -17,9 +17,8 @@
 #   OCCAM_ZIP   toolset archive   (default tools/inmos/d7305a.zip)
 #   OCCAM_WORK  scratch directory (default ${TMPDIR:-/tmp}/ispy-occam)
 #
-# Every occam/*.occ is compiled except checklib.occ (include-only) and
-# peekpoke.occ (needs router.occ).  16-bit sources (filename ending "16")
-# target the T2; the rest target the TA (32-bit) class.
+# Diagnostic sources are compiled for their historical processor classes.
+# Include files and the unused pass/peekpoke examples are skipped.
 
 set -euo pipefail
 
@@ -50,7 +49,7 @@ bases=()
 for src in "$root"/occam/*.occ; do
     base=$(basename "$src" .occ)
     case "$base" in
-        checklib|peekpoke|pass16|pass32) continue ;;   # include-only / examples not used here
+        checklib|router|u805|u425|peekpoke|pass16|pass32) continue ;;   # include-only / unused examples
     esac
     bases+=("$base")
 done
@@ -61,8 +60,11 @@ echo "==> generating build batch (${#bases[@]} sources)"
     printf 'set PATH=C:\\TOOLS\r\ncd \\WORK\r\n'
     for base in "${bases[@]}"; do
         case "$base" in
-            *16) target=T2 ;;
-            *)   target=TA ;;
+            *16|test222a|test222b) target=T2 ;;
+            test414a) target=T4 ;;
+            test425a|test45*|probe45) target=T5 ;;
+            test80x*|test800a|test801a|test85*|probe85) target=T8 ;;
+            *) target=TA ;;
         esac
         # Released C004 helpers also disabled run-time error checking. Keep
         # that mode for their small router/monitor code; other blobs use /H.

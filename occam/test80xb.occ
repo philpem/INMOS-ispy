@@ -1,0 +1,1098 @@
+
+-- --------------------------------------------------
+--
+--    test80xb.occ  --  T8 test code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC test80xb(VAL INT boot)
+  --{{{  PROC FpMul      (BOOL Pass) 1808
+  PROC FpMul (BOOL Pass) -- 1808/17
+  
+    -- Test MULselect Logic; (Single and Double)
+  
+    --{{{  Proc's and Declarations
+    --{{{  PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+    PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+    
+      -- Every FpMul test requires a computed result to be tested against a
+      -- known or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    INT64 DbResult :
+    --}}}
+    SEQ
+      --{{{  Initialisation
+      Pass := TRUE                -- Assume Device Okay Until Fault Found.
+      DbResult := -2 (INT64)      -- Not an Expected Value.
+      --{{{  Step fpusave           -- Clear Error Flags.
+      GUY
+        LDC  556
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+      --}}}
+      --}}}
+      --{{{  Double Length Multiplies
+      --{{{  Double Length Test Constants
+      VAL INT NumberOfDbMulTests IS 17 :
+      --{{{  DbConstants
+      VAL [2*NumberOfDbMulTests]INT64 DbConstants IS
+                  [#00F0000000000000 (INT64), #3FF00F0000000000 (INT64),
+                   #0000000000000001 (INT64), #3FF00F0000000000 (INT64),
+                   #000FFFFFFF800000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFFFF000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFFFE000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFFFC000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFFF8000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFFF0000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFFF00000000 (INT64), #3FDE000000000000 (INT64),
+                   #000FFFF000000000 (INT64), #3FDE000000000000 (INT64),
+                   #3FE123456789ABCD (INT64), #3FF0000000000000 (INT64),
+                   #3FE123456789ABCD (INT64), #3FE123456789ABCD (INT64),
+                   #000FFFFFFF000000 (INT64), #3FFDE00000000000 (INT64),
+                   #000FFFFFFE000000 (INT64), #3FFDE00000000000 (INT64),
+                   #000FFFFFFF000000 (INT64), #3FFDF00000000000 (INT64),
+                   #000FFFFFFF800000 (INT64), #3FFDF80000000000 (INT64),
+                   #000FFFFFFE800000 (INT64), #3FFDFC0000000000 (INT64)] :
+      
+      --}}}
+      --{{{  DbExpected
+      VAL [NumberOfDbMulTests]INT64 DbExpected IS
+                [#00F00F0000000000 (INT64), #0000000000000002 (INT64),
+                 #00077FFFFFC40000 (INT64), #00077FFFFF880000 (INT64),
+                 #00077FFFFF100000 (INT64), #00077FFFFE200000 (INT64),
+                 #00077FFFFC400000 (INT64), #00077FFFF8800000 (INT64),
+                 #00077FFF88000000 (INT64), #00077FF880000000 (INT64),
+                 #3FE123456789ABCD (INT64), #3FD25B413CD69705 (INT64),
+                 #001DDFFFFE220000 (INT64), #001DDFFFFC440000 (INT64),
+                 #001DEFFFFE210000 (INT64), #001DF7FFFF104000 (INT64),
+                 #001DFBFFFD306000 (INT64)] :
+      --}}}
+      --}}}
+      --{{{  INT64 FUNCTION DoDbMul (VAL INT64 FAreg, FBreg)
+      INT64 FUNCTION DoDbMul (VAL INT64 FAreg, FBreg)
+      
+        --   This loads the Fpu A and B Registers and performs the required
+        -- arithmetic. Note that since the Sc must be compiled for a T4
+        -- the floating point instructions have to be hand coded.
+      
+        INT64 Product :
+        VALOF
+          GUY
+            --{{{  load fpbreg
+            LDLP  FBreg
+            --{{{  fpldnldb
+            PFIX  8
+            OPR  #A
+            --}}}
+            --}}}
+            --{{{  load fpareg
+            LDLP  FAreg
+            --{{{  fpldnldb
+            PFIX  8
+            OPR  #A
+            --}}}
+            --}}}
+            --{{{  set rounding mode positive
+            LDC  4
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpmul
+            PFIX  8
+            OPR  #B
+            --}}}
+            --{{{  store the product
+            LDLP Product
+            --{{{  fpstnldb
+            PFIX  8
+            OPR   4
+            --}}}
+            --}}}
+          RESULT Product
+      :
+      --}}}
+      SEQ i = 0 FOR NumberOfDbMulTests
+        INT j :
+        SEQ
+          j := 2 * i
+          DbResult := DoDbMul (DbConstants[j+1], DbConstants [j])
+          VerifyDbResult (Pass, DbResult, DbExpected [i])
+      --}}}
+      --{{{  Test MULSELECT  Part 1
+      --{{{  Double Length Test Constants
+      VAL INT NumberOfMulSelTest1s IS 50 :
+      --{{{  DbExpected1
+      VAL [NumberOfMulSelTest1s]INT64 DbExpected1 IS
+                [#0000000000000000 (INT64), #3FF0000000000000 (INT64),
+                 #3FF6A09E667F3BCD (INT64), #3FFBB67AE8584CAA (INT64),
+                 #4000000000000000 (INT64), #4001E3779B97F4A8 (INT64),
+                 #4003988E1409212E (INT64), #40052A7FA9D2F8EA (INT64),
+                 #4006A09E667F3BCD (INT64), #4008000000000000 (INT64),
+                 #40094C583ADA5B53 (INT64), #400A887293FD6F34 (INT64),
+                 #400BB67AE8584CAA (INT64), #400CD82B446159F3 (INT64),
+                 #400DEEEA11683F49 (INT64), #400EFBDEB14F4EDA (INT64),
+                 #4010000000000000 (INT64), #40107E0F66AFED07 (INT64),
+                 #4010F876CCDF6CD9 (INT64), #40116F8334644DF9 (INT64),
+                 #4011E3779B97F4A8 (INT64), #4012548EB9151E85 (INT64),
+                 #4012C2FC595456A7 (INT64), #40132EEE75770416 (INT64),
+                 #4013988E1409212E (INT64), #4014000000000000 (INT64),
+                 #401465655F122FF6 (INT64), #4014C8DC2E423980 (INT64),
+                 #40152A7FA9D2F8EA (INT64), #40158A68A4A8D9F3 (INT64),
+                 #4015E8ADD236A58F (INT64), #401645640568C1C3 (INT64),
+                 #4016A09E667F3BCD (INT64), #4016FA6EA162D0F0 (INT64),
+                 #401752E50DB3A3A2 (INT64), #4017AA10D193C22D (INT64),
+                 #4018000000000000 (INT64), #401854BFB363DC39 (INT64),
+                 #4018A85C24F70659 (INT64), #4018FAE0C15AD38A (INT64),
+                 #40194C583ADA5B53 (INT64), #40199CCC999FFF00 (INT64),
+                 #4019EC474A261264 (INT64), #401A3AD12A1DA160 (INT64),
+                 #401A887293FD6F34 (INT64), #401AD5336963EEFC (INT64),
+                 #401B211B1C70D023 (INT64), #401B6C30B83593E6 (INT64),
+                 #401BB67AE8584CAA (INT64), #401C000000000000 (INT64)] :
+      --}}}
+      --}}}
+      --{{{  INT64 FUNCTION MulSelTest1 (VAL INT FAreg)
+      INT64 FUNCTION MulSelTest1 (VAL INT FAreg)
+      
+        --   This loads the Fpu A and B Registers and performs the required
+        -- arithmetic. Note that since the Sc must be compiled for a T4
+        -- the floating point instructions have to be hand coded.
+      
+        INT64 Root :
+        VALOF
+          GUY
+            --{{{  load integers and convert to real64s
+            LDLP  FAreg
+            --{{{  fpi32tor64
+            PFIX  9
+            OPR   8
+            --}}}
+            --}}}
+            --{{{  fpusqrtfirst
+            LDC  1
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtlast
+            LDC  3
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  store the root
+            LDLP Root
+            --{{{  fpstnldb
+            PFIX  8
+            OPR   4
+            --}}}
+            --}}}
+          RESULT Root
+      :
+      --}}}
+      SEQ i = 0 FOR NumberOfMulSelTest1s
+        SEQ
+          DbResult := MulSelTest1 (i)
+          VerifyDbResult (Pass, DbResult, DbExpected1 [i])
+      --}}}
+      --{{{  Test MULSELECT  Part 2
+      --{{{  Double Length Test Constants
+      VAL INT NumberOfMulSelTest2s IS 50 :
+      --{{{  DbExpected2
+      VAL [NumberOfMulSelTest2s]INT64 DbExpected2 IS
+                [#0000000000000000 (INT64), #3FF0000000000000 (INT64),
+                 #4000000000000001 (INT64), #4007FFFFFFFFFFFF (INT64),
+                 #4010000000000000 (INT64), #4014000000000001 (INT64),
+                 #4017FFFFFFFFFFFF (INT64), #401C000000000001 (INT64),
+                 #4020000000000001 (INT64), #4022000000000000 (INT64),
+                 #4024000000000001 (INT64), #4026000000000000 (INT64),
+                 #4027FFFFFFFFFFFF (INT64), #4029FFFFFFFFFFFF (INT64),
+                 #402C000000000000 (INT64), #402E000000000001 (INT64),
+                 #4030000000000000 (INT64), #4031000000000000 (INT64),
+                 #4031FFFFFFFFFFFF (INT64), #4033000000000001 (INT64),
+                 #4034000000000001 (INT64), #4035000000000000 (INT64),
+                 #4036000000000000 (INT64), #4036FFFFFFFFFFFF (INT64),
+                 #4037FFFFFFFFFFFF (INT64), #4039000000000000 (INT64),
+                 #4039FFFFFFFFFFFF (INT64), #403B000000000000 (INT64),
+                 #403C000000000001 (INT64), #403CFFFFFFFFFFFF (INT64),
+                 #403E000000000000 (INT64), #403EFFFFFFFFFFFF (INT64),
+                 #4040000000000001 (INT64), #4040800000000000 (INT64),
+                 #4041000000000000 (INT64), #4041800000000000 (INT64),
+                 #4042000000000000 (INT64), #40427FFFFFFFFFFF (INT64),
+                 #4042FFFFFFFFFFFF (INT64), #4043800000000000 (INT64),
+                 #4044000000000001 (INT64), #4044800000000000 (INT64),
+                 #4045000000000000 (INT64), #40457FFFFFFFFFFF (INT64),
+                 #4046000000000000 (INT64), #4046800000000001 (INT64),
+                 #4047000000000000 (INT64), #4047800000000000 (INT64),
+                 #4047FFFFFFFFFFFF (INT64), #4048800000000000 (INT64)] :
+      --}}}
+      --}}}
+      --{{{  INT64 FUNCTION MulSelTest2 (VAL INT FAreg)
+      INT64 FUNCTION MulSelTest2 (VAL INT FAreg)
+      
+        --   This loads the Fpu A and B Registers and performs the required
+        -- arithmetic. Note that since the Sc must be compiled for a T4
+        -- the floating point instructions have to be hand coded.
+      
+        INT64 Square :
+        VALOF
+          GUY
+            --{{{  load integers and convert to real64s
+            LDLP  FAreg
+            --{{{  fpi32tor64
+            PFIX  9
+            OPR   8
+            --}}}
+            --}}}
+            --{{{  fpusqrtfirst
+            LDC  1
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtstep
+            LDC  2
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpusqrtlast
+            LDC  3
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpdup
+            PFIX #A
+            OPR  #3
+            --}}}
+            --{{{  fpmul
+            PFIX  8
+            OPR  #B
+            --}}}
+            --{{{  store the square
+            LDLP Square
+            --{{{  fpstnldb
+            PFIX  8
+            OPR   4
+            --}}}
+            --}}}
+          RESULT Square
+      :
+      --}}}
+      SEQ i = 0 FOR NumberOfMulSelTest2s
+        SEQ
+          DbResult := MulSelTest2 (i)
+          VerifyDbResult (Pass, DbResult, DbExpected2 [i])
+      --}}}
+      --{{{  Single Length Multiplies
+      --{{{  Single Length Test Constants
+      VAL INT NumberOfSnMulTests IS 21 :
+      --{{{  SnConstants
+      VAL [2*NumberOfSnMulTests]INT SnConstants IS
+             [#00000001, #5577FFFF,
+              #00000001, #6477FFFF, #00000001, #7977FFFF,
+              #00000001, #7C77FFFF, #00000001, #7D77FFFF,
+              #00000001, #7E77FFFF, #00000001, #69700000,
+              #00000001, #7C700000, #00000001, #7DF00000,
+              #00000002, #55F7FFFF, #00000002, #6477FFFF,
+              #00000002, #7977FFFF, #00000002, #7C77FFFF,
+              #00000002, #7D77FFFF, #00000002, #7E77FFFF,
+              #00000002, #69700000, #00000002, #7C700000,
+              #00000002, #7DF00000, #00000003, #79700000,
+              #00000003, #73700000, #00000003, #7EF00000] :
+      --}}}
+      --{{{  SnExpected
+      VAL [NumberOfSnMulTests]INT SnExpected IS [#0AF7FFFF,
+                        #19F7FFFF, #2EF7FFFF, #31F7FFFF, #32F7FFFF,
+                        #33F7FFFF, #1EF00000, #31F00000, #33700000,
+                        #0BF7FFFF, #1A77FFFF, #2F77FFFF, #3277FFFF,
+                        #3377FFFF, #3477FFFF, #1F700000, #32700000,
+                        #33F00000, #2FB40000, #29B40000, #35340000] :
+      
+      --}}}
+      --}}}
+      --{{{  INT FUNCTION DoSnMul (VAL INT FAreg, FBreg)
+      INT FUNCTION DoSnMul (VAL INT FAreg, FBreg)
+      
+        --   This loads the Fpu A and B Registers and performs the required
+        -- arithmetic. Note that since the Sc must be compiled for a T4
+        -- the floating point instructions have to be hand coded.
+      
+        INT Product :
+        VALOF
+          GUY
+            --{{{  load fpbreg
+            LDLP  FBreg
+            --{{{  fpldnlsn
+            PFIX  8
+            OPR  #E
+            --}}}
+            --}}}
+            --{{{  load fpareg
+            LDLP  FAreg
+            --{{{  fpldnlsn
+            PFIX  8
+            OPR  #E
+            --}}}
+            --}}}
+            --{{{  set rounding mode positive
+            LDC  4
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpmul
+            PFIX  8
+            OPR  #B
+            --}}}
+            --{{{  store the product
+            LDLP Product
+            --{{{  fpstnlsn
+            PFIX  8
+            OPR   8
+            --}}}
+            --}}}
+          RESULT Product
+      :
+      --}}}
+      --{{{  PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+      PROC VerifyDbResult (BOOL pass, VAL INT result, expected)
+      
+        -- Every FpMul test requires a computed result to be tested against a
+        -- known or expected value. This proc performs the testing.
+        -- The proc sets pass if result differs from expected.
+      
+        IF
+          result = expected
+            SKIP
+          TRUE
+            pass := FALSE
+      :
+      --}}}
+      SEQ i = 0 FOR NumberOfSnMulTests
+        INT SnResult, j :
+        SEQ
+          j := 2 * i
+          SnResult := DoSnMul (SnConstants [j+1], SnConstants [j])
+          VerifyDbResult (Pass, SnResult, SnExpected [i])
+      --}}}
+  :
+  --}}}
+  --{{{  PROC FpDpath2   (BOOL Pass) 1044
+  PROC FpDpath2 (BOOL Pass) -- 1044/19
+  
+    --{{{  Comments on what the Sc does and test mode
+    
+    --{{{  What parts of the Fpu this Sc tests
+    --        This Sc tests the following parts of the Fpu.
+    --
+    --  (1)  The Bus Interface Logic.
+    --
+    --  (2)  Some Rounding Cases.
+    --                      (Tests Cond1FromNotRoundInf.)
+    --
+    --  (3)  The Use of Infinity.
+    --                      (Tests Cond0FromSignsDiffer.)
+    --
+    --}}}
+    
+    --{{{  Notes on Testing Mode
+    
+    --   Through out this Sc the instructions fpldtest and fpsttest are used
+    -- frequently. In normal execution the state of parts of the Fpu are hidden,
+    -- e.g. the rounding mode, guard and sticky bits, etc. It is possible
+    -- to explicitly set some of this hidden state by using the fpldtest
+    -- likewise it is possible to determine some of the hidden state by using the
+    -- instruction fpsttest.
+    --   In order to use fpldtest the Cpu Areg must contain a pointer to an entity
+    -- of type [3]INT. The first two ints contain the usual real32 or real64
+    -- representations whilst the the third int has the ability to set some of
+    -- the above mentioned state.
+    --   Likewise fpsttest requires the Cpu Areg to contain a pointer to an entity
+    -- of type [3]INT. Again the first two ints contain the usual real32 or real64
+    -- representations whilst the third int contains information about the fpu
+    -- state.
+    
+    --}}}
+    
+    --}}}
+  
+    INT inc :
+    --{{{  Entry Point
+    VAL INT FPUROUNDA IS 16 :   -- Used in Rounding Mode Tests.
+    --}}}
+    --{{{  Proc's and Declaration.
+    
+    --{{{  PROC VerifyArrayResult (BOOL pass, VAL []INT result, expected)
+    PROC VerifyArrayResult (BOOL pass, []INT result, VAL []INT expected)
+    
+      --   Some dpath2 tests are performed in "test mode", that is using fpldtest
+      -- and fpsttest. In this mode any computed results are of the type [3]INT.
+      -- This Proc tests whether the arrays result and expected are equal and sets
+      -- pass if they differ.
+    
+      IF
+        IF i = 0 FOR (SIZE result)
+          result [i] <> expected [i]
+            pass := FALSE
+        TRUE
+          SKIP
+    
+    :
+    --}}}
+    --{{{  PROC VerifyDbResult    (BOOL pass, VAL INT64 result, expected)
+    PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+    
+      -- This Proc sets Pass to False if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    
+    [3]INT ResultVector :     -- Used when storing via fpsttest.
+    [3]INT DataVector :       -- Used when loading via fpldtest.
+    [3]INT ExpectedVector :   -- Used in verifying a Result.
+    
+    --}}}
+    SEQ
+      inc := 0
+      --{{{  Initialise
+      Pass := TRUE          -- Assume Device Okay Until Fault Found.
+      --{{{  Step fpusave     -- Clear Error Flags and Set Rounding Mode to Nearest.
+      GUY
+        LDC  556
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+      --}}}
+      --}}}
+      --{{{  Test the Interface
+      --{{{  Definitions and Procs
+      --{{{  Definitions
+      
+      VAL INT NumberOfLoops IS 52 :
+      
+           -- The number of the 58 tests that can be done in a loop.
+      
+      --{{{  Test Constants
+      --   The bus interace logic tests require 58 test constants, which are used as
+      -- "arguments" in fpldtest. The first two words follow a regular pattern or
+      -- are zero. The third word can take one of the seven following values.
+      
+      VAL INT SetStickyBit IS #00180001 :
+      VAL INT SetRoundBit  IS #00180002 :
+      VAL INT SetGuardBit  IS #00180004 :
+      VAL INT SetFpuState1 IS #00180000 :   -- Used in the loop.
+      VAL INT SetFpuState2 IS #00180008 :
+      VAL INT SetFpuState3 IS #00180010 :
+      VAL INT SetFpuState4 IS #00180020 :
+      --}}}
+      
+      --{{{  Expected Constants
+      
+      --   The majority of the expected constants can be generated at run time.
+      -- The global variable ExpectedVector has to be initialised to the following
+      -- value.
+      
+      VAL [3]INT InitialExpectedVector IS [#00000000, #34900000, #02100088]:
+      
+      --   The final two tests require, the following two constants.
+      
+      VAL INT ExpVector1 IS #34200000 :
+      VAL INT ExpVector2 IS #02000080 :
+      --}}}
+      --}}}
+      --{{{  PROC GenerateExpectedVector ([3]INT expectedVector)
+      PROC GenerateExpectedVector ([3]INT expectedVector)
+      
+        --   In order to save on the amount of memory required some expected
+        -- results are generated at run time. Without previously looking at the
+        -- appropriate dump file the manner in which these expected results will
+        -- not be obvious.
+        --   This Proc generates some of the expected results for the bus interface
+        -- logic test.
+      
+        VAL INT TwentiethBit IS #00100000 :
+        SEQ
+          expectedVector [1] := expectedVector [1]  +  TwentiethBit
+          expectedVector [2] := expectedVector [2] ><  TwentiethBit
+      
+            -- Note: ExpectedVector [0] remains unchanged through out the program.
+      :
+      --}}}
+      --{{{  PROC DoInterfaceTest ([3]INT testResult, VAL [3]INT dataVector)
+      PROC DoInterfaceTest ([3]INT testResult, VAL [3]INT dataVector)
+      
+        -- This Proc drives the bus interface logic.
+      
+        GUY
+      
+          LDLP dataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+      
+          --{{{  fpur32tor64
+          LDC  7
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+      
+          LDLP testResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+      :
+      --}}}
+      --}}}
+      SEQ
+        --{{{  Initialise
+        DataVector [0] := 0
+        DataVector [1] := 0
+        ExpectedVector := InitialExpectedVector
+        --}}}
+        --{{{  Tests  1 to  3
+        DataVector [2] := SetStickyBit
+        DoInterfaceTest (ResultVector, DataVector)
+        GenerateExpectedVector (ExpectedVector)
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        
+        DataVector [2] := SetRoundBit
+        DoInterfaceTest (ResultVector, DataVector)
+        GenerateExpectedVector (ExpectedVector)
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        
+        DataVector [2] := SetGuardBit
+        DoInterfaceTest (ResultVector, DataVector)
+        GenerateExpectedVector (ExpectedVector)
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        --}}}
+        --{{{  Tests  4 to 55
+        DataVector [2] := SetFpuState1
+        SEQ i = 0 FOR NumberOfLoops
+          SEQ
+            INT64 DummyReal64 RETYPES [DataVector FROM 0 FOR 2] :
+            DummyReal64 := 1 (INT64) << i
+            DoInterfaceTest (ResultVector, DataVector)
+            GenerateExpectedVector (ExpectedVector)
+            VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        --}}}
+        --{{{  Tests 56 to 58
+        DataVector [1] := 0
+        DataVector [2] := SetFpuState2
+        DoInterfaceTest (ResultVector, DataVector)
+        GenerateExpectedVector (ExpectedVector)
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        
+        DataVector [2] := SetFpuState3
+        DoInterfaceTest (ResultVector, DataVector)
+        ExpectedVector [1] := ExpVector1
+        ExpectedVector [2] := ExpVector2
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        
+        DataVector [2] := SetFpuState4
+        DoInterfaceTest (ResultVector, DataVector)
+        VerifyArrayResult (Pass, ResultVector, ExpectedVector)
+        --}}}
+      --}}}
+      --{{{  Test The Rounding Mode
+      --{{{  Definitions
+      
+      --{{{  General Constants
+      
+      VAL INT NumberOfTestConstants IS 14 :
+      VAL INT TestsPerLoop IS 4 :             -- One test for each rounding mode.
+      
+      VAL INT NumberOfTests IS NumberOfTestConstants * TestsPerLoop :
+      
+      VAL INT Zero    IS #00000000 :
+      VAL INT One     IS #00000001 :
+      VAL INT AllOnes IS #FFFFFFFF :
+      --}}}
+      
+      --{{{  Rounding Mode Test Constants.
+      VAL [NumberOfTestConstants][3]INT RoundingModeConstants IS
+        [ [ Zero    , Zero     , #00100010],
+          [ Zero    , Zero     , #00100001],
+          [ Zero    , Zero     , #80100001],
+          [ Zero    , Zero     , #00100001],
+          [ Zero    , Zero     , #00100002],
+          [ Zero    , Zero     , #00100003],
+          [ Zero    , Zero     , #00100004],
+          [ Zero    , Zero     , #00100005],
+          [ Zero    , Zero     , #00100006],
+          [ Zero    , Zero     , #00100007],
+          [ AllOnes , #7FEFFFFF, #00100007],
+          [ AllOnes , #7FEFFFFF, #80100007],
+          [ AllOnes , #7FE55FFF, #00120007],
+          [ AllOnes , #7FE55FFF, #80120007] ] :
+      --}}}
+      
+      --{{{  Rounding Mode Expected Vector.
+      
+      --   The total number of tests performed in this rounding mode test is 56,
+      -- each of these using fpsttest. However there are only 9 different test
+      -- patterns.
+      
+      VAL INT NumberOfDifferentTestPatterns IS 9 :
+      
+      VAL [NumberOfDifferentTestPatterns][3]INT ExpectedVector IS
+        [ [ Zero    , #00200000, #02000088],
+          [ Zero    ,  Zero    , #02100080],
+          [ One     ,  Zero    , #02100080],
+          [ Zero    , #80000000, #82100080],
+          [ One     , #80000000, #82100080],
+          [ AllOnes,  #7FEFFFFF, #02000088],
+          [#00000000, #7FF00000, #02100088],
+          [ AllOnes,  #FFEFFFFF, #82000088],
+          [ Zero,     #FFF00000, #82100088] ] :
+      
+      --   The following array allows the whole test to be put in a single loop
+      -- as the i'th TestPattern is selected from the i'th element of IndexArray.
+      -- IndexArray is stored as bytes to minimise memory demands.
+      
+      VAL [NumberOfTests]BYTE IndexArray IS
+        [BYTE 0, BYTE 0, BYTE 0, BYTE 0, BYTE 1, BYTE 1, BYTE 2, BYTE 1,
+         BYTE 3, BYTE 3, BYTE 3, BYTE 4, BYTE 1, BYTE 1, BYTE 2, BYTE 1,
+         BYTE 1, BYTE 1, BYTE 2, BYTE 1, BYTE 1, BYTE 1, BYTE 2, BYTE 1,
+         BYTE 1, BYTE 1, BYTE 2, BYTE 1, BYTE 1, BYTE 2, BYTE 2, BYTE 1,
+         BYTE 1, BYTE 2, BYTE 2, BYTE 1, BYTE 1, BYTE 2, BYTE 2, BYTE 1,
+         BYTE 5, BYTE 6, BYTE 6, BYTE 5, BYTE 7, BYTE 8, BYTE 7, BYTE 8,
+         BYTE 5, BYTE 6, BYTE 6, BYTE 5, BYTE 7, BYTE 8, BYTE 7, BYTE 8] :
+      --}}}
+      --}}}
+      SEQ i = 0 FOR NumberOfTestConstants
+        INT FourTimesi :       -- 4 * i
+        INT LocalEntryPoint :  -- Used to store the entry point of fpurounda.
+        SEQ
+          --{{{  Initialisation
+          DataVector := RoundingModeConstants [i]
+          LocalEntryPoint := FPUROUNDA
+          FourTimesi := 4 * i
+          --}}}
+          --{{{  Round Zero Test
+          GUY
+            LDLP DataVector
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            --{{{  fpurz
+            LDC  6
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpurounda
+            LDL  LocalEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            LDLP ResultVector
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+          VerifyArrayResult (Pass, ResultVector,
+                            ExpectedVector [ INT IndexArray [FourTimesi] ])
+          --}}}
+          --{{{  Round Nearest Test
+          GUY
+            LDLP DataVector
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            --{{{  fpurn
+            LDC  34
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpurounda
+            LDL  LocalEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            LDLP ResultVector
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+          VerifyArrayResult (Pass, ResultVector,
+                            ExpectedVector [ INT IndexArray [FourTimesi + 1] ])
+          --}}}
+          --{{{  Round Positive Test
+          GUY
+            LDLP DataVector
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            --{{{  fpurp
+            LDC  4
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpurounda
+            LDL  LocalEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            LDLP ResultVector
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+          VerifyArrayResult (Pass, ResultVector,
+                            ExpectedVector [ INT IndexArray [FourTimesi + 2] ])
+          --}}}
+          --{{{  Round Minus Test
+          GUY
+            LDLP DataVector
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            --{{{  fpurm
+            LDC  5
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fpurounda
+            LDL  LocalEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            LDLP ResultVector
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+          VerifyArrayResult (Pass, ResultVector,
+                            ExpectedVector [ INT IndexArray [FourTimesi + 3] ])
+          --}}}
+      --}}}
+      --{{{  Test Infinities
+      
+      --{{{  Definitions
+      VAL INT64 PlusInf  IS #7FF0000000000000 (INT64) :
+      VAL INT64 MinusInf IS #FFF0000000000000 (INT64) :
+      VAL INT64 LargeInf IS #3FF6A09E667F3BCD (INT64) :  -- Sqrt (2.0 R64)
+      
+      --   The following bit pattern is produced when Inf's of opposite signs are
+      -- added .
+      VAL INT64 InfsOppSignError IS   #7FF1000000000000 (INT64) :
+      
+      --
+      --   The following bit pattern is produced when LargeInf is multiplied by
+      -- LargeInf.
+      VAL INT64 LargeInfSquared IS  #4000000000000001 (INT64) : -- Approx 2.0 R64
+      --}}}
+      
+      --{{{  Declarations
+      INT64 Result :      -- Used to compare computed result against expected value.
+      INT64 BufferInf :   -- Used in loading the appropriate inf into the stack.
+      --}}}
+      
+      SEQ
+        --{{{  Inf + Inf
+        BufferInf := PlusInf
+        GUY
+          --{{{  Load Fpu Stack and Add
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpdup
+          PFIX #A
+          OPR   3
+          --}}}
+          --{{{  fpadd
+          PFIX  8
+          OPR   7
+          --}}}
+          --}}}
+          --{{{  Store to Result
+          LDLP Result
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+          --}}}
+        VerifyDbResult (Pass, Result, PlusInf)
+        --}}}
+        --{{{  Inf + ( - Inf )
+        --{{{  Load Fpu Stack and Add
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+        BufferInf := MinusInf
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpadd
+          PFIX  8
+          OPR   7
+          --}}}
+        --}}}
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+        --}}}
+        VerifyDbResult (Pass, Result, InfsOppSignError)
+        --}}}
+        --{{{  ( - Inf ) + Inf
+        --{{{  Load Stack and Add
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+        BufferInf := PlusInf
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpadd
+          PFIX  8
+          OPR   7
+          --}}}
+        --}}}
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+        --}}}
+        VerifyDbResult (Pass, Result, InfsOppSignError)
+        --}}}
+        --{{{  ( - Inf ) + ( - Inf )
+        --{{{  Load Stack and Add
+        BufferInf := MinusInf
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpdup
+          PFIX #A
+          OPR   3
+          --}}}
+          --{{{  fpadd
+          PFIX  8
+          OPR   7
+          --}}}
+        --}}}
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+        --}}}
+        VerifyDbResult (Pass, Result, MinusInf)
+        --}}}
+        --{{{  LargeInf * LargeInf
+        --{{{  Load Stack and Mul
+        BufferInf := LargeInf
+        GUY
+          LDLP BufferInf
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpdup
+          PFIX #A
+          OPR   3
+          --}}}
+          --{{{  fpmul
+          PFIX  8
+          OPR  #B
+          --}}}
+        --}}}
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+        --}}}
+        VerifyDbResult (Pass, Result, LargeInfSquared)
+        --}}}
+      --}}}
+  
+  :
+  --}}}
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass :
+  [16]BYTE message :
+  SEQ
+    --{{{  FP Mul
+    VAL mess IS "?FP multiply" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpMul(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  FP Dpath 2
+    VAL mess IS "?FP Datapath 2" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpDpath2(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+
+--
+--  eof
+--

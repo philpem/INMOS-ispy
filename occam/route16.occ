@@ -1,0 +1,18 @@
+
+-- --------------------------------------------------
+--
+--    route16.occ  --  vestigial router for 16bit TPs
+--
+-- --------------------------------------------------
+
+#INCLUDE "checklib.occ"
+PROC route16(VAL INT bootchan)
+  VAL size.segment IS 200:
+  #INCLUDE "router.occ"
+  CHAN OF ANY in, out :
+  router(bootchan, in, out)
+:
+
+--
+--  eof
+--
