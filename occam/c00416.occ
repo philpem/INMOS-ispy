@@ -14,10 +14,22 @@
 VAL size.segment IS 34 :
 PROC c00416(VAL INT bootchan)
   --{{{  hard CHANs, INPUT and OUTPUT
-  [4]CHAN OF ANY OUTPUT :
-  PLACE OUTPUT AT 0 :
-  [4]CHAN OF ANY INPUT :
-  PLACE INPUT AT 4 :
+  -- Place individual channel words; placed arrays contain pointers,
+  -- and must not overlay the hardware link registers.
+  CHAN OF ANY link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [link.out.0, link.out.1,
+                            link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [link.in.0, link.in.1,
+                           link.in.2, link.in.3] :
   CHAN OF ANY COMMAND IS INPUT[bootchan] :
   --}}}
   CHAN OF ANY to.application :
