@@ -43,7 +43,8 @@ OPR_SECONDARY = {
 }
 
 OPR_EXTENDED = {
-    0x18: 'stlf', 0x1B: 'ldpi', 0x1C: 'sthf', 0x42: 'mint', 0x1FF: 'start',
+    0x18: 'stlf', 0x1B: 'ldpi', 0x1C: 'sthf', 0x20: 'ret',
+    0x42: 'mint', 0x1FF: 'start',
 }
 
 
@@ -51,31 +52,25 @@ def decode(code, pc):
     """Decode one instruction at pc.
 
     Returns (length, text, kind, target, operand) where kind is one of
-    j/cj/call/endp/gcall/startp/other and target is the absolute branch target
+    j/cj/call/endp/gcall/startp/ret/other and target is the absolute branch target
     for j/cj/call.
     """
     start = pc
-    chain = []
-    while pc < len(code) and (code[pc] >> 4) in (0x2, 0x6):
-        chain.append((code[pc] >> 4, code[pc] & 0xF))
+    operand = 0
+    while pc < len(code):
+        byte = code[pc]
         pc += 1
-    if pc >= len(code):
-        return (pc - start, '(truncated)', 'other', None, None)
-
-    b = code[pc]
-    pc += 1
-    op = b >> 4
-    fnib = b & 0xF
-
-    nibs = [c[1] for c in chain] + [fnib]
-    acc = 0
-    for n in nibs:
-        acc = acc * 16 + n
-    nfixes = [c for c in chain if c[0] == 0x6]
-    if nfixes and not any(c[0] == 0x2 for c in chain):
-        val = fnib - (nfixes[-1][1] + 1) * 16
+        op = byte >> 4
+        operand |= byte & 0xF
+        if op == 0x2:
+            operand <<= 4
+        elif op == 0x6:
+            operand = (~operand) << 4
+        else:
+            break
     else:
-        val = -acc if nfixes else acc
+        return (pc - start, '(truncated)', 'other', None, None)
+    val = operand
 
     kind = 'other'
     target = None
@@ -94,6 +89,8 @@ def decode(code, pc):
             kind = 'gcall'
         elif val == 0xD:
             kind = 'startp'
+        elif val == 0x20:
+            kind = 'ret'
     else:
         text = '%s %d' % (PRIM[op], val)
 
@@ -138,7 +135,7 @@ def walk(code, seeds):
                     work.append(target)
                 pc = nxt
                 continue
-            if kind in ('endp', 'gcall'):
+            if kind in ('endp', 'gcall', 'ret'):
                 break
             pc = nxt
     return starts, order, seen
@@ -152,8 +149,10 @@ def codepointer_seeds(code, starts):
             nxt = pc + ln
             if nxt in starts:
                 ln2, t2, k2, g2, v2 = decode(code, nxt)
-                if t2 == 'opr ldpi' and 0 <= val < len(code):
-                    seeds.append(val)
+                if t2 == 'opr ldpi':
+                    pointer = nxt + ln2 + val
+                    if 0 <= pointer < len(code):
+                        seeds.append(pointer)
     return seeds
 
 
