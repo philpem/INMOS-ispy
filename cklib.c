@@ -26,7 +26,6 @@
 #ifndef atoi
 #include <stdlib.h>
 #endif
-#include <malloc.h>
 
 #include "linkio.h"
 #include "inmos.h"
@@ -759,11 +758,7 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 				if (lastlink < 4) {
 					AbortExit("loader", "Timed out setting route to processor %d",  p->links[lastlink]->tpid);
 				}
-				//else {
-				//	if (lastlink == 4) {
-				//		AbortExit("loader", "Timed out talking to application on processor %d", p->tpid);
-				//	}
-				//}
+
 			}
 		}
 		free(route);
@@ -795,14 +790,14 @@ int load(LINK TheLink, struct tpstats * p,
 	int 		flag, j, k;
 	unsigned char 	params[16];
 	
-	printf("load - tpboot\n");
+	DEBUG((stderr, "load - tpboot\n"));
 	tpboot(TheLink, p);
 	length = CodeSize;
 	if (p->parent != NULL) {
-		printf("load - sendiserver 1\n");
+		DEBUG((stderr, "load - sendiserver 1\n"));
 		flag = sendiserver(TheLink, sizeof(boot), boot);
 	} else {
-		printf("load - writelink 1\n");
+		DEBUG((stderr, "load - writelink 1\n"));
 		flag = WriteLink(TheLink, boot, sizeof(boot), TIMEOUT) == sizeof(boot);
 	}
 	if (flag) {
@@ -828,10 +823,10 @@ int load(LINK TheLink, struct tpstats * p,
 		}
 	
 		if (p->parent != NULL) {
-			printf("load - sendiserver 2\n");
+			DEBUG((stderr, "load - sendiserver 2\n"));
 			flag = sendiserver(TheLink, 4 * BytesPerWord, params);
 		} else {
-			printf("load - writelink 2\n");
+			DEBUG((stderr, "load - writelink 2\n"));
 			flag = (WriteLink(TheLink, params, 4 * BytesPerWord, TIMEOUT) == (4 * BytesPerWord));
 		}
 		
@@ -841,15 +836,15 @@ int load(LINK TheLink, struct tpstats * p,
 				count = SEGSIZE;
 			}
 			if (p->parent != NULL) {
-				printf("load - sendiserver 3\n");
+				DEBUG((stderr, "load - sendiserver 3\n"));
 				flag = sendiserver(TheLink, (int) count, &Code[i]);
 			} else {
-				printf("load - writelink 3\n");
+				DEBUG((stderr, "load - writelink 3\n"));
 				flag = WriteLink(TheLink, &Code[i], (int) count, TIMEOUT) == (int) count;
 			}
 		}
 	}
-	printf("load - finished [%d]\n", flag);
+	DEBUG((stderr, "load - finished [%d]\n", flag));
 	return (flag);
 
 }

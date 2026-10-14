@@ -1,0 +1,70 @@
+-- Derived from recovered INMOS FTEST; later-revision address map.
+#INCLUDE "u425.occ"
+PROC probe45(VAL INT bootchan)
+  PROC Probe(BOOL Pass)
+    INT result :
+    SEQ
+      Pass := TRUE
+      GUY
+        LDLP 0
+        STEP GAJW
+        LDC 0
+        OPR u.gajwnewwdesch
+        LDC 0
+        LDPRI
+        STL result
+      Pass := result = 0
+      GUY
+        LDLP 0
+        STEP GAJW
+        LDC 0
+        OPR u.gajwnewwdescl
+        LDC 0
+        LDPRI
+        STL result
+      Pass := Pass AND (result = 1)
+      -- Arm a distant low-priority alarm, then disable it before it is due.
+      -- No synthetic timer-queue entry is installed or allowed to expire.
+      GUY
+        LDTIMER
+        LDC #100000
+        SUM
+        STEP GAJW
+        LDC 0
+        OPR u.insnextlt
+        LDC 0
+        OPR u.insendltaddr
+        LDC 0
+        LDL 0
+      -- Confirm instruction execution and workspace access survived cleanup.
+      GUY
+        LDPRI
+        STL result
+      Pass := Pass AND (result = 1)
+  :
+  CHAN OF ANY OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3 :
+  PLACE OUTPUT0 AT 0 :
+  PLACE OUTPUT1 AT 1 :
+  PLACE OUTPUT2 AT 2 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[bootchan] :
+  VAL mess IS "?Priority and timer" :
+  VAL marker IS ":BEGIN Priority and timer" :
+  VAL done IS "." :
+  [SIZE mess]BYTE message :
+  BOOL pass :
+  SEQ
+    out ! (INT16 (SIZE marker))::marker
+    message := mess
+    Probe(pass)
+    IF
+      pass
+        message[0] := ' '
+      TRUE
+        SKIP
+    out ! (INT16 (SIZE mess))::message
+    out ! (INT16 (SIZE done))::done
+    GUY
+      OPR #1FF
+:

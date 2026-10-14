@@ -1,0 +1,528 @@
+
+-- --------------------------------------------------
+--
+--    testt32a.occ  --  TA test code
+--
+-- --------------------------------------------------
+
+#INCLUDE "checklib.occ"
+PROC testt32a(VAL INT boot)
+  --   Some functional test procedures, ie those that only include listed
+  -- transputer instructions can be used for all parts, irrespective of type
+  -- or revision. The following functional tests employ only listed transputer
+  -- instructions.
+  --{{{  PROC DpathTX (BOOL Pass)
+  PROC DpathTX (BOOL Pass, BOOL breakpointing)  -- 884 bytes code
+
+    -- This tests the registers on the datapath using different values
+    -- for each register, in order to observe that stack is correctly
+    -- pushing and popping, and set each bit of each register to 1 and 0
+    -- to check stuck-at faults.
+
+    --{{{  Declaration
+    INT Result :
+      -- This is used to compare a computed result against an expected value.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, VAL INT result, Expected)
+    
+      -- Every Dpath test requires a computed result to be tested against a known
+      -- or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected.
+    
+      IF
+        result = Expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE           -- Assume Device Okay Until Fault Found.
+      Result := #EEEEEEEE    -- Not one of the Expected Values.
+      --}}}
+      --{{{  Test the Stack Registers
+      GUY
+        LDC   #11111111
+        LDC   #22222222
+        LDC   #33333333
+        STL   Result
+      VerifyResult (Pass, Result, #33333333)
+      
+      GUY
+        LDC   #11111111
+        LDC   #22222222
+        LDC   #33333333
+        STL   Result
+        STL   Result
+      VerifyResult (Pass, Result, #22222222)
+      
+      GUY
+        LDC   #11111111
+        LDC   #22222222
+        LDC   #33333333
+        STL   Result
+        STL   Result
+        STL   Result
+      VerifyResult (Pass, Result, #11111111)
+      
+      GUY
+        LDC   #EEEEEEEE
+        LDC   #DDDDDDDD
+        LDC   #CCCCCCCC
+        STL   Result
+      VerifyResult (Pass, Result, #CCCCCCCC)
+      
+      GUY
+        LDC   #EEEEEEEE
+        LDC   #DDDDDDDD
+        LDC   #CCCCCCCC
+        STL   Result
+        STL   Result
+      VerifyResult (Pass, Result, #DDDDDDDD)
+      
+      GUY
+        LDC   #EEEEEEEE
+        LDC   #DDDDDDDD
+        LDC   #CCCCCCCC
+        STL   Result
+        STL   Result
+        STL   Result
+      VerifyResult (Pass, Result, #EEEEEEEE)
+      --}}}
+      --{{{  Test Dreg, Ereg and STATUSreg
+      --{{{  Comment
+      -- Avoid use of both ErrorBit and HaltOnErrorBit
+      -- Note that the two STATUSreg conditional bits are not loadable.
+      --}}}
+      GUY
+        STEP REV              -- clear STATUSreg cond bits
+        LDC   0               -- clear Oreg and push stack
+        LDC   #4BBBBBB4
+        LDC   #55555555
+        LDC   #66666666
+        TESTSTD
+        TESTSTE
+        TESTSTS
+      
+        TESTLDS
+        STL   Result
+      IF
+        breakpointing
+          VerifyResult (Pass, Result, #4BBBBBB4)
+        TRUE
+          VerifyResult (Pass, Result, #0BBBBBB4)        
+      
+      GUY
+        TESTLDE
+        STL   Result
+      VerifyResult (Pass, Result, #55555555)
+      
+      GUY
+        TESTLDD
+        STL   Result
+      VerifyResult (Pass, Result, #66666666)
+      
+      GUY
+        LDC   #B444444B
+        LDC   #AAAAAAAA
+        LDC   #99999999
+        TESTSTD
+        TESTSTE
+        TESTSTS
+      
+        TESTLDS
+        STL   Result
+      IF
+        breakpointing
+          VerifyResult (Pass, Result, #B444444B)
+        TRUE
+          VerifyResult (Pass, Result, #9444444B)
+      
+      GUY
+        TESTLDE
+        STL   Result
+      VerifyResult (Pass, Result, #AAAAAAAA)
+      
+      GUY
+        TESTLDD
+        STL   Result
+      VerifyResult (Pass, Result, #99999999)
+      --}}}
+      --{{{  Test Oreg
+      GUY     -- Oreg  (loaded by prefixing)
+        LDC   #12345678
+        STL   Result
+      VerifyResult (Pass, Result, #12345678)
+      
+      GUY
+        LDC   #EDCBA987
+        STL   Result
+      VerifyResult (Pass, Result, #EDCBA987)
+      --}}}
+      --{{{  Test LFptr and LBptr
+      [2]INT Temp :
+      SEQ
+        GUY
+          LDC   #11111112
+          LDC   #22222223
+          STLB
+          STLF
+          LDLP Temp [0]
+          SAVEL
+        VerifyResult (Pass, Temp [0], #11111112)
+        VerifyResult (Pass, Temp [1], #22222223)
+      
+        GUY
+          LDC   #EEEEEEED
+          LDC   #DDDDDDDC
+          STLB
+          STLF
+          LDLP Temp [0]
+          SAVEL
+        VerifyResult (Pass, Temp [0], #EEEEEEED)
+        VerifyResult (Pass, Temp [1], #DDDDDDDC)
+      
+        GUY
+          MINT
+          STLF                -- restore low queue to empty (NotProcess)
+      --}}}
+      --{{{  Test HFptr and HBptr
+      [2]INT Temp :
+      SEQ
+        GUY
+          LDC   #33333334
+          LDC   #44444445
+          STHB
+          STHF
+          LDLP  Temp [0]
+          SAVEH
+        VerifyResult (Pass, Temp [0], #33333334)
+        VerifyResult (Pass, Temp [1], #44444445)
+      
+        GUY
+          LDC   #CCCCCCCB
+          LDC   #BBBBBBBA
+          STHB
+          STHF
+          LDLP  Temp [0]
+          SAVEH
+        VerifyResult (Pass, Temp [0], #CCCCCCCB)
+        VerifyResult (Pass, Temp [1], #BBBBBBBA)
+      
+        GUY
+          MINT
+          STHF                -- restore high queue to empty (NotProcess)
+      --}}}
+      --{{{  Test Channel Registers
+      --INT Counter :
+      --SEQ
+      --  --{{{  Write Unique Values to all Channel Registers
+      --  Counter := 0
+      --  SEQ i = 0 FOR 8
+      --    SEQ j = 0 FOR 3
+      --      SEQ
+      --        GUY
+      --          LDL Counter
+      --          ADC   #C3C2C1C0
+      --          LDL   i
+      --          BCNT
+      --          TESTHARDCHAN
+      --        Counter := Counter + 1
+      --  --}}}
+      --  --{{{  Write Inverse Unique Values to all Channel Registers
+      --  Counter := 0
+      --  SEQ i = 0 FOR 8
+      --    SEQ j = 0 FOR 3
+      --      SEQ
+      --        GUY
+      --          LDL Counter
+      --          ADC   #C3C2C1C0
+      --          NOT
+      --          LDL   i
+      --          BCNT
+      --          TESTHARDCHAN
+      --          STL   Result
+      --        VerifyResult (Pass, Result, Counter + #C3C2C1C0)
+      --        Counter := Counter + 1
+      --  --}}}
+      --  --{{{  Read Last Values from all Channel Registers
+      --  Counter := 0
+      --  SEQ i = 0 FOR 8
+      --    SEQ j = 0 FOR 3
+      --      SEQ
+      --        GUY
+      --          LDL   i
+      --          BCNT
+      --          TESTHARDCHAN
+      --          STL  Result
+      --        VerifyResult (Pass, Result, #3C3D3E3F - Counter)
+      --        Counter := Counter + 1
+      --  --}}}
+      --}}}
+      --{{{  Test Wptr                     -- T4/T8   SC Dpath
+      --{{{  Wptr
+      
+      --   The original test requires that the timer should not have been started
+      -- and that no other processes are waiting. Since this state cannot be achieved
+      -- in a program useful for functional testing the original test has been
+      -- changed.
+      --   The new Wptr test checks all the Wptr bits for "stuck at" faults -
+      -- except for the last bit. The last bit indicates the priority of the process.
+      
+      PRI PAR
+        INT OldWptr, NewWptr :
+        SEQ
+          --{{{  Test Wptr
+          GUY
+            LDLP  0                       -- Form address of OldWptr
+            TESTSTD                       -- Dreg := OldWptr
+            TESTLDD                       -- Areg := OldWptr
+            STL  OldWptr
+            TESTLDD                       -- Areg := OldWptr
+            NOT                           -- Complement the Bit Pattern
+            LDC  #FFFFFFFC                -- Ensure byte selector of WDesc is zero.
+            AND
+            GAJW                          -- Write the pattern into Wptr
+                                          -- Areg := OldWptr
+          
+            TESTLDD                       -- Areg := OldWptr
+            GAJW                          -- Restore OldWptr and
+                                          -- Areg = Complement of OldWptr
+            STL NewWptr
+          
+          OldWptr := OldWptr \/ 3         -- Allows the use of ~ in the next line.
+          VerifyResult (Pass, NewWptr, ~ OldWptr)
+          
+          --}}}
+        SKIP
+      --}}}
+      --{{{  Clear the Status Register
+      GUY
+        LDC   0
+        TESTSTS
+      --}}}
+      --}}}
+  :
+  --}}}
+  --{{{  PROC AluTX   (BOOL Pass)
+  PROC AluTX (BOOL Pass)  -- 780 bytes code
+  
+    -- Check generate and propagate on Xbus and Ybus from each bit position
+    -- subtraction and all logical functions. This causes all the 8 columns
+    -- for the AluOpsField to be set, except YbusByteMask, which should
+    -- be tested with a complete block move test.
+  
+    --{{{  Comment
+    
+    -- Different sections of the alu are tested by generating bit patterns using
+    -- theses parts and comparing these patterns against expected bit patterns.
+    -- In order to reduce the amount of memory required to do the comparing some
+    -- of the expected bit patterns are generated at run time, Result Gen,
+    -- Result Prop X and Result Prop Y.
+    
+    -- Note : If the way in which expected bit patterns are generated at run time
+    -- is equivalent to the way in which the alu has generated the bit pattern
+    -- the test is obviously invalid.
+    -- The possibility of an error occurring in both methods that produces
+    -- equivalent bit patterns is assumed to be negligible.
+    --}}}
+  
+    --{{{  Definitions and Declarations
+    VAL INT BitsInWord IS 32 :
+    
+    INT Result :  -- Used to compare a computed result against an expected value.
+    
+    INT Arg1, Arg2 : -- Used as arguments in logical and arithmetic operations.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    
+      -- Every Alu test requires a computed result to be tested against a known
+      -- or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected and resets result.
+      -- result is reset for the following reason. Some adjacent Alu tests
+      -- require the same expected values. If for any reason result failed to be
+      -- re-assigned the next test might indicate a pass irrespective of whether
+      -- the alu was functioning correctly.
+    
+      SEQ
+        IF
+          result = Expected
+            SKIP
+          TRUE
+            pass := FALSE
+        result := #EEEEEEEE
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE           -- Assume Device Okay Until Fault Found.
+      Result := #EEEEEEEE    -- Not one of the Expected Values.
+      --}}}
+      --{{{  Result Gen
+      Arg1 := 1
+      Arg2 := 1
+      SEQ i = 0 FOR BitsInWord
+        SEQ
+          Result := Arg1 + Arg2
+          VerifyResult (Pass, Result, 2 << i)
+          Arg1 := Arg1 << 1
+          Arg2 := Arg1
+      --}}}
+      --{{{  Result Prop X
+      INT Expected, Adjustment :  -- Used to generate the expected values.
+      SEQ
+        Adjustment := 3
+        Expected   := 1
+        Arg1      := 0
+        Arg2      := 1
+        SEQ i = 0 FOR BitsInWord
+          SEQ
+            Result := Arg1 + Arg2
+            VerifyResult (Pass, Result, Expected)
+            Expected := Expected + Adjustment
+            Adjustment := Adjustment * 2
+            Arg1 := (Arg1 << 1) + 1
+            Arg2 := (Arg2 << 1) + 1
+      --}}}
+      --{{{  Result Prop Y
+      INT Expected, Adjustment :  -- Used to generate the expected value
+      SEQ
+        Adjustment := 3
+        Expected   := 1
+        Arg1      := 1
+        Arg2      := 0
+        SEQ i = 0 FOR BitsInWord
+          SEQ
+            Result := Arg1 + Arg2
+            VerifyResult (Pass, Result, Expected)
+            Expected := Expected + Adjustment
+            Adjustment := Adjustment * 2
+            Arg1 := (Arg1 << 1) + 1
+            Arg2 := (Arg2 << 1) + 1
+      --}}}
+      --{{{  Result Sub
+      --{{{  TestArray
+      VAL []INT TestArray IS
+         [#FFFFFFFF, #80000000, #40000002, #20000006,
+          #1000000E, #0800001E, #0400003E, #0200007E,
+          #010000FE, #008001FE, #004003FE, #002007FE,
+          #00100FFE, #00081FFE, #00043FFE, #00027FFE,
+          #0001FFFE, #00027FFE, #00043FFE, #00081FFE,
+          #00100FFE, #002007FE, #004003FE, #008001FE,
+          #010000FE, #0200007E, #0400003E, #0800001E,
+          #1000000E, #20000006, #40000002, #80000000] :
+      --}}}
+      SEQ
+        Arg1 := -1
+        Arg2 :=  0
+        SEQ i = 0 FOR BitsInWord
+          SEQ
+            Result := Arg1 + Arg2
+            VerifyResult (Pass, Result, TestArray [i])
+            Arg1 := (Arg1 >> 1)
+            Arg2 := (Arg2 << 1) + 1
+      --}}}
+      --{{{  Test The Alu Logic
+      --{{{  PROC LogicFunctions (VAL [6]INT TAIndex)
+      PROC LogicFunctions (VAL [6]INT TAIndex)
+        --{{{  TestArray
+        VAL []INT TestArray IS [#55555555, #00000000, #AAAAAAAA,
+                                #FFFFFFFF, #33333333, #CCCCCCCC] :
+        --}}}
+        --{{{  Comment
+        -- TAIndex contains subscripts that Index into the TestArray.
+        -- The first two elements of TAIndex identify the arguments that are used in
+        -- the logic functions. The last four elements are used to identify expected
+        -- bit patterns.
+        --}}}
+        SEQ
+          Result := TestArray [ TAIndex[0] ] \/ TestArray [ TAIndex[1] ]
+          VerifyResult (Pass, Result, TestArray [ TAIndex[2] ])
+          Result := TestArray [ TAIndex[0] ] /\ TestArray [ TAIndex[1] ]
+          VerifyResult (Pass, Result, TestArray [ TAIndex[3] ])
+          Result := TestArray [ TAIndex[0] ] >< TestArray [ TAIndex[1] ]
+          VerifyResult (Pass, Result, TestArray [ TAIndex[4] ])
+          Result := ~ TestArray [ TAIndex[0] ]
+          VerifyResult (Pass, Result, TestArray [ TAIndex[5] ])
+      :
+      --}}}
+      SEQ
+        LogicFunctions ([0, 0, 0, 0, 1, 2])
+        LogicFunctions ([2, 0, 3, 1, 3, 0])
+        LogicFunctions ([0, 2, 3, 1, 3, 2])
+        LogicFunctions ([2, 2, 2, 2, 1, 0])
+        LogicFunctions ([4, 4, 4, 4, 1, 5])
+        LogicFunctions ([5, 4, 3, 1, 3, 4])
+        LogicFunctions ([4, 5, 3, 1, 3, 5])
+        LogicFunctions ([5, 5, 5, 5, 1, 4])
+      --}}}
+      --{{{  Clear Error
+      GUY
+        TESTERR
+      --}}}
+  
+  :
+  --}}}
+  --{{{  hard CHANs, INPUT and OUTPUT
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF ANY INPUT0 :
+  PLACE INPUT0 AT 4 :
+  CHAN OF ANY INPUT1 :
+  PLACE INPUT1 AT 5 :
+  CHAN OF ANY INPUT2 :
+  PLACE INPUT2 AT 6 :
+  CHAN OF ANY INPUT3 :
+  PLACE INPUT3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [INPUT0, INPUT1, INPUT2, INPUT3] :
+  --}}}
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass, breakpointing :
+  [20]BYTE message :
+  SEQ
+    INT16 trash :
+    INPUT[boot] ? trash::message
+    breakpointing := message[0] = 1(BYTE)
+    --{{{  datapath
+    VAL mess IS "?Integer Datapath" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      DpathTX(pass, breakpointing)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  ALU
+    VAL mess IS "?Integer ALU" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      AluTX(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+
+--
+--  eof
+--

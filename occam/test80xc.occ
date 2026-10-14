@@ -1,0 +1,1404 @@
+-- --------------------------------------------------
+--
+--    test80xc.occ  --  T8 test code
+--
+-- --------------------------------------------------
+
+PROC test80xc(VAL INT boot)
+  --{{{  PROC FpDiv      (BOOL Pass) 1452
+  PROC FpDiv (BOOL Pass) -- 1452/27
+    --{{{  Comment
+    
+    -- This Sc Tests Floating Point Division.
+    
+    --}}}
+  
+    --{{{  Definitions
+    
+    --{{{  General Constants
+    
+    VAL INT NumberOfSnTests IS 30 :
+    VAL INT NumberOfDbTests IS 30 :
+    
+    VAL INT64 DbOne IS 1 (INT64) :
+    VAL INT   SnOne IS 1         :
+    --}}}
+    
+    --{{{  FpDiv Test Constants.
+    --{{{  Comment
+    --   The total number of single length test constants is 60. However, there
+    -- exists a certain amount of duplication and the number of different test
+    -- constants is 29. Similarly there 60 double length test constants of which
+    -- 28 are different
+    --}}}
+    
+    VAL INT NumberOfDifferentTestConstants IS 29 :
+    
+    --{{{  FpDivSnConstants
+    VAL [NumberOfDifferentTestConstants]INT FpDivSnConstants IS
+          [#3F800000, #3F800001,    --   1.0       (REAL32),   1.0..1     (REAL32)
+           #3F000001, #3E800001,    --   0.5..1    (REAL32),   0.25..1    (REAL32)
+           #3E000001, #3D800001,    --   0.125..1  (REAL32),   0.0625..1  (REAL32)
+           #3D000001, #3C800001,
+           #30000001, #10000001,    --   Small             ,   Very Small
+           #BF800001, #BF000001,    -- - 1.0..1    (REAL32), - 0.5..1     (REAL32)
+           #BE800001, #BE000001,    -- - 0.25..1   (REAL32), - 0.125..1   (REAL32)
+           #BD800001, #BD000001,    -- - 0.0625..1 (REAL32),
+           #BC800001, #B0000001,    --                     , - Small
+           #90000001, #00000000,    -- - Very Small        ,   0.0        (REAL32)
+           #80000000, #3E000000,    -- - 0.0       (REAL32),   0.125      (REAL32)
+           #3E000004, #3E000005,    --   0.125..4  (REAL32),   0.125..5   (REAL32)
+           #3E000008, #3E000009,    --   0.125..8  (REAL32),   0.125..9   (REAL32)
+           #3E00000C, #3E00000D,    --   0.125.12  (REAL32),   0.125.13   (REAL32)
+           #3F800010] :             --   > 1.0..1  (REAL32) -- Might be an error
+    --}}}
+    --{{{  FpDivDbConstants
+    VAL [NumberOfDifferentTestConstants]INT64 FpDivDbConstants IS
+         [#3FF0000000000000 (INT64),   --   1.0        (REAL64)
+          #3FF0000000000001 (INT64),   --   1.0..1     (REAL64)
+          #3FE0000000000001 (INT64),   --   0.5..1      (REAL64)
+          #3FD0000000000001 (INT64),   --   0.25..1    (REAL64)
+          #3FC0000000000001 (INT64),   --   0.125..1   (REAL64)
+          #3FB0000000000001 (INT64),   --   0.0625..1  (REAL64)
+          #3FA0000000000001 (INT64),   --
+          #3F90000000000001 (INT64),   --
+          #3000000000000001 (INT64),   --   Small
+          #1000000000000001 (INT64),   --   Very Small
+          #BFF0000000000001 (INT64),   -- - 1.0..1     (REAL64)
+          #BFE0000000000001 (INT64),   -- - 0.5..1     (REAL64)
+          #BFD0000000000001 (INT64),   -- - 0.25..1    (REAL64)
+          #BFC0000000000001 (INT64),   -- - 0.125..1   (REAL64)
+          #BFB0000000000001 (INT64),   -- - 0.0625..1  (REAL64)
+          #BFA0000000000001 (INT64),   --
+          #BF90000000000001 (INT64),   --
+          #B000000000000001 (INT64),   -- - Small
+          #9000000000000001 (INT64),   -- - Very Small
+          #0000000000000000 (INT64),   --   0.0        (REAL64)
+          #8000000000000000 (INT64),   -- - 0.0        (REAL64)
+          #3FC0000000000000 (INT64),   --   0.125      (REAL64)
+          #3FC0000000000004 (INT64),   --   0.125..4   (REAL64)
+          #3FC0000000000005 (INT64),   --   0.125..5   (REAL64)
+          #3FC0000000000008 (INT64),   --   0.125..8   (REAL64)
+          #3FC0000000000009 (INT64),   --   0.125..9   (REAL64)
+          #3FC000000000000C (INT64),   --   0.125.12   (REAL64)
+          #3FC000000000000D (INT64),   --   0.125.13   (REAL64)
+          #3FF0000000000001 (INT64)] : --   1.0..1     (REAL64)  -- Repeated
+    --}}}
+    
+    --{{{  Comment
+    --   The following arrays allows the single and double length tests to be put
+    -- in a single loop as the i'th Test Constant is selected from the
+    -- i'th element of IndexArray. IndexArray is stored as bytes to minimise
+    -- memory demands.
+    --}}}
+    
+    VAL INT NumberOfTestConstants IS 60 :
+        --   The total number of single length test constants, (also equal to the
+        -- total number of double length test constants).
+    
+    --{{{  Sn Length Index Array
+    VAL [NumberOfTestConstants]BYTE SnIndexArray IS
+      [BYTE  0, BYTE  1, BYTE  0, BYTE  2, BYTE  0, BYTE  3, BYTE  0, BYTE  4,
+       BYTE  5, BYTE  5, BYTE  6, BYTE  6, BYTE  7, BYTE  7, BYTE  0, BYTE  8,
+       BYTE  0, BYTE  9, BYTE 28, BYTE  9, BYTE  0, BYTE 10, BYTE 11, BYTE 11,
+       BYTE  0, BYTE 12, BYTE  0, BYTE 13, BYTE  0, BYTE 14, BYTE  0, BYTE 15,
+       BYTE  0, BYTE 16, BYTE  0, BYTE 17, BYTE  0, BYTE 18, BYTE 28, BYTE 18,
+       BYTE 19, BYTE 20, BYTE 20, BYTE 19, BYTE 21, BYTE  0, BYTE  4, BYTE  0,
+       BYTE 22, BYTE  0, BYTE 23, BYTE  0, BYTE 24, BYTE  0, BYTE 25, BYTE  0,
+       BYTE 26, BYTE  0, BYTE 27, BYTE  0] :
+    --}}}
+    --{{{  Db Length Index Array
+    VAL [NumberOfTestConstants]BYTE DbIndexArray IS
+      [BYTE  0, BYTE  1, BYTE  0, BYTE  2, BYTE  0, BYTE  3, BYTE  0, BYTE  4,
+       BYTE  5, BYTE  5, BYTE  0, BYTE  6, BYTE  7, BYTE  7, BYTE  0, BYTE  8,
+       BYTE  0, BYTE  9, BYTE 28, BYTE  9, BYTE  0, BYTE 10, BYTE  0, BYTE 11,
+       BYTE  0, BYTE 12, BYTE  0, BYTE 13, BYTE  0, BYTE 14, BYTE  0, BYTE 15,
+       BYTE  0, BYTE 16, BYTE  0, BYTE 17, BYTE  0, BYTE 18, BYTE 28, BYTE 18,
+       BYTE 19, BYTE 20, BYTE 20, BYTE 19, BYTE 21, BYTE  0, BYTE  4, BYTE  0,
+       BYTE 22, BYTE  0, BYTE 23, BYTE  0, BYTE 24, BYTE  0, BYTE 25, BYTE  0,
+       BYTE 26, BYTE  0, BYTE 27, BYTE  0] :
+    --}}}
+    
+    -- Note : Some of these constants are also used in FpRound. It might be
+    -- beneficial to put any duplications into a library.
+    --}}}
+    
+    --{{{  FpDiv Expected Vector
+    
+    VAL INT True  IS 1 :  -- Boolean value TRUE
+    VAL INT False IS 0 :  -- Boolean Value FALSE
+    
+    --   These arrays are used in verifying computed results. Computed results are
+    -- checked against the appropriate element(s) of these arrays.
+    --   It contains most of the dump file used in the testing rigs.
+    
+    --{{{  SnExpectedVector
+    VAL []INT SnExpectedVector IS
+      [#3F7FFFFE, #3FFFFFFE, #407FFFFE, #40FFFFFE,
+       #3F800000, #3F800000, #3F800000, #4EFFFFFE,
+       #6EFFFFFE, #6F00000E, #BF7FFFFE, #3F800000,
+       #C07FFFFE, #C0FFFFFE, #C17FFFFE, #C1FFFFFE,
+       #C27FFFFE, #CEFFFFFE, #EEFFFFFE, #EF00000E,
+       #7FC00000, #7FC00000, #3E000000, #3E000001,
+       #3E000004, #3E000005, #3E000008, #3E000009,
+       #3E00000C, #3E00000D] :
+    --}}}
+    
+    --{{{  DbExpectedVector
+    VAL []INT DbExpectedVector IS
+      [#FFFFFFFE, #3FEFFFFF, #FFFFFFFE, #3FFFFFFF,
+       #FFFFFFFE, #400FFFFF, #FFFFFFFE, #401FFFFF,
+       #00000000, #3FF00000, #FFFFFFFE, #403FFFFF,
+       #00000000, #3FF00000, #FFFFFFFE, #4FDFFFFF,
+       #FFFFFFFE, #6FDFFFFF, #00000000, #6FE00000,
+       #FFFFFFFE, #BFEFFFFF, #FFFFFFFE, #BFFFFFFF,
+       #FFFFFFFE, #C00FFFFF, #FFFFFFFE, #C01FFFFF,
+       #FFFFFFFE, #C02FFFFF, #FFFFFFFE, #C03FFFFF,
+       #FFFFFFFE, #C04FFFFF, #FFFFFFFE, #CFDFFFFF,
+       #FFFFFFFE, #EFDFFFFF, #00000000, #EFE00000,
+       #00000000, #7FF80000, #00000000, #7FF80000,
+       #00000000, #3FC00000, #00000001, #3FC00000,
+       #00000004, #3FC00000, #00000005, #3FC00000,
+       #00000008, #3FC00000, #00000009, #3FC00000,
+       #0000000C, #3FC00000, #0000000D, #3FC00000] :
+    --}}}
+    --}}}
+    
+    --{{{  Rounding Mode Constants
+    
+    --   The rounding mode entry points. These entry points should not constant
+    -- with respect to future parts.
+    
+    VAL INT FPURM IS  5 :
+    VAL INT FPURP IS  4 :
+    VAL INT FPURN IS 22 :
+    VAL INT FPURZ IS  6 :
+    --}}}
+    --}}}
+    --{{{  Declarations
+    
+    INT64 DbResult, DbExpected :
+    
+    INT SnResult, SnExpected :
+    
+            -- Used in comparing a computed result against an expected one.
+    
+    
+    INT FpErrorFlag :
+    
+    --}}}
+    --{{{  Proc's
+    --{{{  PROC DoSnTests (VAL INT roundingMode)
+    PROC DoSnTests (VAL INT roundingMode)
+    
+      -- This Proc performs the single length division tests.
+    
+      SEQ i = 0 FOR NumberOfSnTests
+    
+        --{{{  INT, INT FUNCTION DoSnDiv (VAL INT FpAreg, FpBreg, RoundMode)
+        INT, INT FUNCTION DoSnDiv (VAL INT FpAreg, FpBreg, RoundMode)
+        
+          --   This function does one single length division and stores the result
+          -- of the division and the Fpu Error Flag in result [0] and result [1]
+          -- respectivly.
+        
+          INT DivResult, fperror :
+          VALOF
+            GUY
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Load FpAreg and FpBreg
+              LDLP FpBreg
+              --{{{  fpldnlsn
+              PFIX  8
+              OPR  #E
+              --}}}
+              LDLP FpAreg
+              --{{{  fpldnlsn
+              PFIX  8
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  Set Rounding Mode
+              LDL  RoundMode
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpdiv
+              PFIX  8
+              OPR  #C
+              --}}}
+              --{{{  Store to DivResult
+              LDLP DivResult
+              --{{{  fpstnlsn
+              PFIX  8
+              OPR   8
+              --}}}
+              --}}}
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Store to fperror
+              LDLP fperror
+              STNL 0
+              --}}}
+            RESULT DivResult, fperror
+        :
+        --}}}
+        --{{{  PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+        PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+        
+          --   All div tests requires a computed result to be tested against a
+          -- known or expected value. This proc performs the testing for single
+          -- length results. The proc sets pass if result differs from expected.
+        
+          IF
+            result = expected
+              SKIP
+            TRUE
+              pass := FALSE
+        :
+        --}}}
+        SEQ
+    
+          SnResult, FpErrorFlag :=
+             DoSnDiv ( FpDivSnConstants [ INT SnIndexArray [(2*i) + 1] ],
+                       FpDivSnConstants [ INT SnIndexArray [  2 * i  ] ],
+                       roundingMode)
+    
+    
+          --{{{  Set SnExpected and Check Fpu Error Flag
+          SnExpected := SnExpectedVector [i]
+          CASE i
+            --{{{  0, 1, 2, 3, 7, 8
+            0, 1, 2, 3, 7, 8
+              IF
+                roundingMode = FPURP
+                  SnExpected := SnExpected + SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  9
+            9
+              IF
+                (roundingMode = FPURP) OR (roundingMode = FPURN)
+                  SnExpected := SnExpected + SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  10, 12, 13, 14, 15, 16, 17, 18
+            10, 12, 13 ,14, 15, 16, 17, 18
+              IF
+                roundingMode = FPURM
+                  SnExpected := SnExpected + SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  19
+            19
+              IF
+                (roundingMode = FPURM) OR (roundingMode = FPURN)
+                  SnExpected := SnExpected + SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  ELSE
+            ELSE
+              SKIP
+            --}}}
+          --{{{  Check the Fpu Error Flag
+          IF
+            --{{{  (i = 20) Or (i = 21)  Should be false
+            (i = 20) OR (i = 21)
+              IF
+                FpErrorFlag = False
+                  SKIP
+                FpErrorFlag = True
+                  Pass := FALSE
+            --}}}
+            --{{{  Else Should be True
+            TRUE
+              IF
+                FpErrorFlag = True
+                  SKIP
+                FpErrorFlag = False
+                  Pass := FALSE
+            --}}}
+          --}}}
+          --}}}
+    
+          VerifySnResult (Pass, SnResult, SnExpected)
+    
+    :
+    --}}}
+    --{{{  PROC DoDbTests (VAL INT roundingMode)
+    PROC DoDbTests (VAL INT roundingMode)
+    
+      -- This Proc performs the double length division tests.
+    
+      SEQ i = 0 FOR NumberOfDbTests
+    
+        --{{{  PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+        PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+        
+          --   All div tests requires a computed result to be tested against a
+          -- known or expected value. This proc performs the testing for double
+          -- length results. The proc sets pass if result differs from expected.
+        
+          SEQ
+            IF
+              result = expected
+                SKIP
+              TRUE
+                pass := FALSE
+        :
+        --}}}
+        --{{{  INT64, INT FUNCTION DoDbDiv (INT64 FpAreg, FpBreg, INT RoundMode)
+        INT64, INT FUNCTION DoDbDiv (VAL INT64 FpAreg, FpBreg, VAL INT RoundMode)
+        
+          --   This Proc does one double length division and stores the result
+          -- of the division and the Fpu Error Flag in results [0, 1] and result [2]
+          -- respectivly.
+        
+          INT64 DivResult :
+          INT fperrorflag :
+          VALOF
+            GUY
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Load FpAreg and FpBreg
+              LDLP FpBreg
+              --{{{  fpldnldb
+              PFIX  8
+              OPR  #A
+              --}}}
+              LDLP FpAreg
+              --{{{  fpldnldb
+              PFIX  8
+              OPR  #A
+              --}}}
+              --}}}
+              --{{{  Set Rounding Mode
+              LDL  RoundMode
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpdiv
+              PFIX  8
+              OPR  #C
+              --}}}
+              --{{{  Store to DivResult
+              LDLP DivResult
+              --{{{  fpstnldb
+              PFIX  8
+              OPR   4
+              --}}}
+              --}}}
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Store to result [2]
+              LDLP fperrorflag
+              STNL 0
+              --}}}
+            RESULT DivResult, fperrorflag
+        :
+        --}}}
+        SEQ
+    
+          DbResult, FpErrorFlag :=
+                  DoDbDiv (FpDivDbConstants [ INT DbIndexArray [(2*i) + 1] ],
+                           FpDivDbConstants [ INT DbIndexArray [  2 * i  ] ],
+                           roundingMode)
+    
+          --{{{  Set DbExpected and Check Fpu Error Flag
+          VAL INT64 dummy RETYPES [DbExpectedVector FROM (2*i) FOR 2] :
+          DbExpected := dummy
+          CASE i
+            --{{{  0, 1, 2, 3, 5, 7, 8
+            0, 1, 2, 3, 5, 7, 8
+              IF
+                roundingMode = FPURP
+                  DbExpected := DbExpected + DbOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  10, 11, 12, 13, 14, 15, 16, 17, 18
+            10, 11, 12, 13 ,14, 15, 16, 17, 18
+              IF
+                roundingMode = FPURM
+                  DbExpected := DbExpected + DbOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  ELSE
+            ELSE
+              SKIP
+            --}}}
+          --{{{  Check the Fpu Error Flag
+          IF
+            --{{{  (i = 20) Or (i = 21)  Should be false
+            (i = 20) OR (i = 21)
+              IF
+                FpErrorFlag = False
+                  SKIP
+                FpErrorFlag = True
+                  Pass := FALSE
+            --}}}
+            --{{{  Else Should be True
+            TRUE
+              IF
+                FpErrorFlag = True
+                  SKIP
+                FpErrorFlag = False
+                  Pass := FALSE
+            --}}}
+          --}}}
+          --}}}
+    
+          VerifyDbResult (Pass, DbResult, DbExpected)
+    
+    :
+    --}}}
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE          -- Assume Device Okay Until Fault Found.
+      --}}}
+      --{{{  Single Length Tests
+      DoSnTests (FPURM)
+      DoSnTests (FPURP)
+      DoSnTests (FPURN)
+      DoSnTests (FPURZ)
+      --}}}
+      --{{{  Double Length Tests
+      DoDbTests (FPURM)
+      DoDbTests (FPURP)
+      DoDbTests (FPURN)
+      DoDbTests (FPURZ)
+      --}}}
+  :
+  --}}}
+  --{{{  PROC FpConv     (BOOL Pass) 1372
+  PROC FpConv (BOOL Pass) -- 1372/21
+    -- INT a, INT64 b, c,
+  
+    --{{{  Comment
+    
+    -- This Sc tests the real to int and int to real conversions.
+    
+    --}}}
+  
+    --{{{  Definitions
+    
+    --{{{  General Constants
+    
+    VAL INT NumberOfInt32Tests          IS 38 :
+    
+    VAL INT NumberOfSeparateInt32Tests  IS 32 :
+      --   These do not require any test constants or expected values to be stored
+      -- as they are all generated at run time.
+    
+    
+    
+    VAL INT NumberOfReal32Tests IS 12 :
+    VAL INT NumberOfInt64Tests  IS 12 :
+    VAL INT NumberOfReal64Tests IS 12 :
+    
+    VAL INT TotalNumberOfTests IS
+       (NumberOfInt32Tests + NumberOfReal32Tests) +
+                            (NumberOfInt64Tests + NumberOfReal64Tests) :
+    
+    --}}}
+    
+    --{{{  Expected Vector
+    VAL NumberOfExpectedConstants IS
+                       (TotalNumberOfTests - NumberOfSeparateInt32Tests) * 3 :
+    
+    --   Each test requires one single length constant and one double length
+    -- constant, hence the factor of three.
+    
+    
+    
+    VAL [NumberOfExpectedConstants]INT ExpectedVector IS
+      --{{{  INT32  Test
+      [#00000000, #00000000,   #00000000,     #00000000,   #09457B19, #002AF632,
+      #00000000, #87F00000,   #FFFFFFFF,     #00000000,   #89E00000, #80000000,
+      #60000000, #89D95A4B,   #9A96D280,     #80000000,   #09DF845C, #7E117200,
+      --}}}
+      --{{{  REAL32 Test
+      #00000000, #07F00000,  #00000001,    #00000000, #07F00000,  #00000001,
+      #00000000, #08000000,  #00000002,    #00000000, #88000000,  #FFFFFFFE,
+      #00000000, #08100000,  #00000004,    #00000000, #08320000,  #00000012,
+      #00000000, #08520000,  #00000048,    #00000000, #08920000,  #00000480,
+      #00000000, #09120000,  #00048000,    #E0000000, #0A11FFFF,  #7FFFF800,
+      #E0000000, #0C11FFFF,  #00000000,    #00000000, #80000000,  #00000000,
+      --}}}
+      --{{{  INT64  Test
+      #00000000, #00000000,  #00000000,    #FC9D2AB4, #43D7E155,  #74AAD000,
+      #00000000, #BFF00000,  #FFFFFFFF,    #00000000, #C3E00000,  #00000000,
+      #00000000, #406FE000,  #000000FF,    #00000000, #40EFE000,  #0000FF00,
+      #00000000, #416FE000,  #00FF0000,    #00000000, #41EFE000,  #FF000000,
+      #00000000, #426FE000,  #00000000,    #00000000, #42EFE000,  #00000000,
+      #00000000, #436FE000,  #00000000,    #00000000, #C3700000,  #00000000,
+      --}}}
+      --{{{  REAL64 Test
+      #00000000, #3FF00000,  #00000001,    #00000000, #00000000,  #00000000,
+      #00000000, #40000000,  #00000002,    #DD924829, #4800218E,  #00000000,
+      #DD924829, #5000218E,  #00000000,    #DD924829, #5800218E,  #00000000,
+      #DD924829, #6000218E,  #00000000,    #DD924829, #6000218E,  #00000000,
+      #DD924829, #7000218E,  #00000000,    #DD924829, #7F34D233,  #00000000,
+      #00000000, #40000000,  #00000002,    #00000000, #80000000,  #00000000] :
+      --}}}
+    
+    --}}}
+    
+    --{{{  Test Constants
+    VAL INT NumberOfSnTestConstants IS
+        (NumberOfInt32Tests + NumberOfReal32Tests) - NumberOfSeparateInt32Tests :
+    
+    VAL [NumberOfSnTestConstants]INT SnTestConstants IS
+      --{{{  INT32  Test Constants
+      [#00000000, #002AF632, #FFFFFFFF, #80000000, #9A96D2A5, #7E117232,
+      --}}}
+      --{{{  REAL32 Test Constants
+      #3F800000, #3F8FFFFF, #40000000, #C0000000, #408FFFFF, #418FFFFF,
+      #428FFFFF, #448FFFFF, #488FFFFF, #508FFFFF, #608FFFFF, #808FFFFF] :
+      --}}}
+    
+    
+    VAL INT NumberOfDbTestConstants IS NumberOfInt64Tests + NumberOfReal64Tests :
+    
+    VAL [NumberOfDbTestConstants]INT64 DbTestConstants IS
+      --{{{  INT64   Test Constants
+      [#0000000000000000 (INT64), #5F8557F274AACE99 (INT64),
+      #FFFFFFFFFFFFFFFF (INT64), #8000000000000000 (INT64),
+      #00000000000000FF (INT64), #000000000000FF00 (INT64),
+      #0000000000FF0000 (INT64), #00000000FF000000 (INT64),
+      #000000FF00000000 (INT64), #0000FF0000000000 (INT64),
+      #00FF000000000000 (INT64), #FF00000000000000 (INT64),
+      --}}}
+      --{{{  REAL64  Test Constants
+      #3FF0000000000000 (INT64), #3F00218EDD924829 (INT64),
+      #4000218EDD924829 (INT64), #4800218EDD924829 (INT64),
+      #5000218EDD924829 (INT64), #5800218EDD924829 (INT64),
+      #6000218EDD924829 (INT64), #6000218EDD924829 (INT64),
+      #7000218EDD924829 (INT64), #7F34D233DD924829 (INT64),
+      #3FFFFFFFFFFFFFFF (INT64), #8000000000000000 (INT64)] :
+      --}}}
+    --}}}
+    
+    --}}}
+    --{{{  Proc's and Declarations
+    
+    --{{{  PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+    PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+    
+      --   Every Conversion test requires a computed result to be tested against a
+      -- known or expected value. This proc performs the testing.
+      --   The proc sets pass if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    
+    :
+    --}}}
+    --{{{  PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+    PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+    
+      --   Every Conversion test requires a computed result to be tested against a
+      -- known or expected value. This proc performs the testing.
+      --   The proc sets pass if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    
+    :
+    --}}}
+    
+    INT64 DbResult :
+    INT   SnResult :
+       -- Used in checking computed values against known or expected values.
+    
+    INT TestConstantIndex, ExpectedVectorIndex :
+       -- Used to index into the arrays TestConstants and VectorIndex.
+    
+    --}}}
+    SEQ
+      --{{{  Initialise
+      ExpectedVectorIndex := 0
+      TestConstantIndex := 0
+      Pass := TRUE          -- Assume Device Okay Until Fault Found.
+      --}}}
+      --{{{  INT32  Test Cases
+      --{{{  INT64, INT FUNCTION DoInt32Test (VAL INT testConstant)
+      INT64, INT FUNCTION DoInt32Test (VAL INT testConstant)
+        INT64 RealResult :
+        INT IntResult :
+        VALOF
+          GUY
+            --{{{  fptesterr     -- Clear Error Flag.
+            PFIX  9
+            OPR  #C
+            --}}}
+            --{{{  load fpareg
+            LDLP testConstant
+            --{{{  fpi32tor32
+            PFIX  9
+            OPR   6
+            --}}}
+            --}}}
+            --{{{  fpdup
+            PFIX #A
+            OPR   3
+            --}}}
+            --{{{  store integer result
+            LDLP IntResult
+            --{{{  fpstnli32
+            PFIX  9
+            OPR  #E
+            --}}}
+            --}}}
+            --{{{  store real result
+            LDLP RealResult
+            --{{{  fpstnldb
+            PFIX  8
+            OPR   4
+            --}}}
+            --}}}
+          RESULT RealResult, IntResult
+      :
+      --}}}
+      SEQ
+        --{{{  Tests   1 -  4
+        SEQ i = 0 FOR 4
+          SEQ
+            DbResult, SnResult := DoInt32Test (SnTestConstants [TestConstantIndex])
+            TestConstantIndex := TestConstantIndex + 1
+        
+        
+            VAL INT64 dummy RETYPES [ExpectedVector FROM ExpectedVectorIndex FOR 2] :
+            VerifyDbResult (Pass, DbResult, dummy)
+            ExpectedVectorIndex := ExpectedVectorIndex + 2
+        
+            VerifySnResult (Pass, SnResult, ExpectedVector [ExpectedVectorIndex])
+            ExpectedVectorIndex := ExpectedVectorIndex + 1
+        --}}}
+        --{{{  Tests   5 - 36
+        VAL INT AddEnd       IS #00100000 :
+        VAL INT InitialValue IS #07E00000 :
+        [2]INT Expected :
+        SEQ
+          Expected [0] := 0
+          Expected [1] := InitialValue
+        
+          SEQ i = 0 FOR NumberOfSeparateInt32Tests     --  Also BitsPerWord
+            SEQ
+        
+              DbResult, SnResult := DoInt32Test (1 << i)
+        
+              --{{{  Set Expected Value
+              Expected [1] := Expected [1] + AddEnd
+              IF
+                i <> 31
+                  SKIP
+                TRUE
+                  Expected [1] := Expected [1] \/ #80000000  -- Set Sign Bit.
+              --}}}
+        
+              VAL INT64 dummyInt64 RETYPES Expected :
+              VerifyDbResult (Pass, DbResult, dummyInt64)
+        
+              VerifySnResult (Pass, SnResult, 1 << i)
+        --}}}
+        --{{{  Tests  37 & 38
+        SEQ i = 0 FOR 2
+          SEQ
+            DbResult, SnResult := DoInt32Test ( SnTestConstants [TestConstantIndex])
+            TestConstantIndex := TestConstantIndex + 1
+        
+            VAL INT64 dummy RETYPES [ExpectedVector FROM ExpectedVectorIndex FOR 2] :
+            VerifyDbResult (Pass, DbResult, dummy)
+            ExpectedVectorIndex := ExpectedVectorIndex + 2
+        
+            VerifySnResult (Pass, SnResult, ExpectedVector [ExpectedVectorIndex])
+            ExpectedVectorIndex := ExpectedVectorIndex + 1
+        --}}}
+      --}}}
+      --{{{  REAL32 Test Cases
+      SEQ i = 0 FOR NumberOfReal32Tests
+        --{{{  INT64, INT FUNCTION DoReal32Test (VAL INT testConstant)
+        INT64, INT FUNCTION DoReal32Test (VAL INT testConstant)
+          INT64 RealResult :
+          INT IntResult :
+          VALOF
+            GUY
+              --{{{  fptesterr     -- Clear Error Flag.
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  load fpareg
+              LDLP testConstant
+              --{{{  fpldnlsn
+              PFIX  8
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  fpint
+              PFIX #A
+              OPR   1
+              --}}}
+              --{{{  fpuclrerr
+              LDC #9C
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpuchki32
+              LDC #E
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpchkerr
+              PFIX  8
+              OPR   3
+              --}}}
+              --{{{  fpdup
+              PFIX #A
+              OPR   3
+              --}}}
+              --{{{  store integer result
+              LDLP IntResult
+              --{{{  fpstnli32
+              PFIX  9
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  store real result
+              LDLP RealResult
+              --{{{  fpstnldb
+              PFIX  8
+              OPR   4
+              --}}}
+              --}}}
+            RESULT RealResult, IntResult
+        :
+        --}}}
+        SEQ
+          DbResult, SnResult := DoReal32Test ( SnTestConstants [TestConstantIndex])
+          TestConstantIndex := TestConstantIndex + 1
+      
+          VAL INT64 dummy RETYPES [ExpectedVector FROM ExpectedVectorIndex FOR 2] :
+          VerifyDbResult (Pass, DbResult, dummy)
+          ExpectedVectorIndex := ExpectedVectorIndex + 2
+      
+          VerifySnResult (Pass, SnResult, ExpectedVector [ExpectedVectorIndex])
+          ExpectedVectorIndex := ExpectedVectorIndex + 1
+      --}}}
+      --{{{  INT64  Test Cases
+      TestConstantIndex := 0
+      SEQ i = 0 FOR NumberOfInt64Tests
+        --{{{  INT64, INT FUNCTION DoInt64Test (VAL INT64 testConstant)
+        INT64, INT FUNCTION DoInt64Test (VAL INT64 testConstant)
+          INT64 RealResult :
+          INT IntResult :
+          VALOF
+            GUY
+              --{{{  fptesterr     -- Clear Error Flag.
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  load fpareg and fpbreg
+              LDLP testConstant
+              --{{{  dup (not fpdup)
+              PFIX  5
+              OPR  #A
+              --}}}
+              --{{{  fpb32tor64
+              PFIX  9
+              OPR  #A
+              --}}}
+              LDNLP 1
+              --{{{  fpi32tor64
+              PFIX  9
+              OPR   8
+              --}}}
+              --}}}
+              --{{{  fpuexpinc32
+              LDC #A
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpadd
+              PFIX  8
+              OPR   7
+              --}}}
+              --{{{  fpdup
+              PFIX #A
+              OPR   3
+              --}}}
+              --{{{  fpint
+              PFIX #A
+              OPR   1
+              --}}}
+              --{{{  store integer result
+              LDLP IntResult
+              --{{{  fpstnli32
+              PFIX  9
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  store real result
+              LDLP RealResult
+              --{{{  fpstnldb
+              PFIX  8
+              OPR   4
+              --}}}
+              --}}}
+            RESULT RealResult, IntResult
+        :
+        --}}}
+        SEQ
+          DbResult, SnResult := DoInt64Test ( DbTestConstants [TestConstantIndex])
+          TestConstantIndex := TestConstantIndex + 1
+      
+          VAL INT64 dummy RETYPES [ExpectedVector FROM ExpectedVectorIndex FOR 2] :
+          VerifyDbResult (Pass, DbResult, dummy)
+          ExpectedVectorIndex := ExpectedVectorIndex + 2
+      
+          VerifySnResult (Pass, SnResult, ExpectedVector [ExpectedVectorIndex])
+          ExpectedVectorIndex := ExpectedVectorIndex + 1
+      --}}}
+      --{{{  REAL64 Test Cases
+      SEQ i = 0 FOR NumberOfReal64Tests
+        --{{{  INT64, INT FUNCTION DoReal64Test (VAL INT64 testConstant)
+        INT64, INT FUNCTION DoReal64Test (VAL INT64 testConstant)
+          INT64 RealResult :
+          INT IntResult :
+          VALOF
+            GUY
+              --{{{  fptesterr     -- Clear Error Flag.
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  load fpareg
+              LDLP testConstant
+              --{{{  fpldnldb
+              PFIX  8
+              OPR  #A
+              --}}}
+              --}}}
+              --{{{  fpint
+              PFIX #A
+              OPR   1
+              --}}}
+              --{{{  fpuclrerr
+              LDC #9C
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpuchki64
+              LDC #F
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpchkerr
+              PFIX  8
+              OPR   3
+              --}}}
+              --{{{  fpdup
+              PFIX #A
+              OPR   3
+              --}}}
+              --{{{  store integer result
+              LDLP IntResult
+              --{{{  fpstnli32
+              PFIX  9
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  store real result
+              LDLP RealResult
+              --{{{  fpstnldb
+              PFIX  8
+              OPR   4
+              --}}}
+              --}}}
+            RESULT RealResult, IntResult
+        :
+        --}}}
+        SEQ
+          DbResult, SnResult := DoReal64Test ( DbTestConstants [TestConstantIndex])
+          TestConstantIndex := TestConstantIndex + 1
+      
+          VAL INT64 dummy RETYPES [ExpectedVector FROM ExpectedVectorIndex FOR 2] :
+          VerifyDbResult (Pass, DbResult, dummy)
+          ExpectedVectorIndex := ExpectedVectorIndex + 2
+      
+          VerifySnResult (Pass, SnResult, ExpectedVector [ExpectedVectorIndex])
+          ExpectedVectorIndex := ExpectedVectorIndex + 1
+      --}}}
+  :
+  --}}}
+  --{{{  PROC FpDpath3   (BOOL Pass)  716
+  PROC FpDpath3 (BOOL Pass) -- 716/12
+  
+    --{{{  Comments on what the Sc does and the Differences in Revs
+    
+    --{{{  What parts of the Fpu this Sc tests
+    --        This Sc tests the following parts of the Fpu.
+    --
+    --  (1)  The Rem Logic.
+    --
+    --  (2)  Parts of the Square Root Logic.
+    --
+    --
+    --
+    --}}}
+    
+    --{{{  Comment on the difference between C and Drevs
+    --   It is assumed that these tests are to be run on T800c or later parts.
+    -- The only difference between the c and d revisions is in Remainder.
+    -- For certain arguments (FpAreg = 1.0, FpBreg =Inf) the C rev returns Inf
+    -- whereas the D rev returns #7F804000. This actually provides a test
+    -- for determining the rev of a given part.
+    --   This Sc explicitly tests the given case and to avoid duplication of
+    -- the test for different revisions this difference is incorporated in
+    -- the code. In order to accomadate this, the order in which the original tests
+    -- were performed has been slightly changed. The specific test mentioned above
+    -- is done separately.
+    --}}}
+    
+    --}}}
+  
+    --{{{  Expected Array
+    VAL INT NumberOfExpectedConstants IS 54 :
+    
+    --{{{  The Expected Array
+    VAL [NumberOfExpectedConstants]INT ExpectedArray IS
+    
+              --{{{  Rem Logic Expected Values
+              [#80044441, #41600000, #00012345, #00000000,
+               #00012345, #00000000, #3E812345, #00000000,
+               #3F012345, #00000000, #BD864200, #3F800000,
+               #BE064200, #40000000, #BE864200, #40800000,
+               #3E515940, #42F00000, #BE80420C, #4C187651,
+               #BE7FFFE0, #40800000, #3E7FFFE0, #40800000,
+               #00000000, #40800000, #3EFFFFF0, #40800000,
+               #3F000000, #40800000, #BEEDCBB0, #40A00000,
+               #00000000, #40A00000, #3D11A280, #40A00000,
+               #BF000000, #40C00000, #BEEDCBB0, #40C00000,
+               #3C11A280, #3F800000, #BC11A280, #3F800000,
+                                     #3F800000, #00000000,
+               #7F800300, #7F801000, #7F800300, #7F801000,
+              --}}}
+    
+                 -- Special Case Rem Expected Value
+              #7F801000,
+    
+                 -- Square Root Expected Value
+              #3F352625,
+    
+                 -- Further Rem Test Expected Values
+              #807FFFEF, #49000010] :
+    --}}}
+    --}}}
+    --{{{  Declarations
+    INT Result :
+            -- Used in comparing a computed result against an expected one.
+    
+    INT Index :
+            -- Used to Index into ExpectedArray.
+    
+    INT TestConstantBuffer :
+            -- Used to load the Fpu Stack Registers.
+    --}}}
+    --{{{  PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+    PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+    
+      --   Every Fpdpath3 test requires a computed result to be tested against
+      -- a known or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Index := 0
+      Pass := TRUE          -- Assume Device Okay Until Fault Found.
+      --{{{  Step fpusave     -- Clear Error Flags and Set Rounding Mode to Nearest.
+      GUY
+        LDC  556
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+      --}}}
+      --}}}
+      --{{{  Rem Logic Test
+      --{{{  Test Constants
+      VAL INT NumberOfRemLoops IS 25 :   --   Number of different Rem Calculations
+                                         -- performed in the single Rem Loop.
+      
+      
+      -- The following array contains the arguments that the Rem tests require.
+      
+      VAL [2*NumberOfRemLoops]INT TestConstants IS
+                [#00812345, #00098765, #00012345, #00898765,
+                 #00012345, #00098765, #3E812345, #3F898765,
+                 #3F012345, #3F898765, #3F812345, #3F898765,
+                 #40012345, #3F898765, #40812345, #3F898765,
+                 #43012345, #3F898765, #53012345, #3F898765,
+                 #40800000, #3F87FFFF, #4087FFFF, #3F800000,
+                 #40800000, #3F800000, #408FFFFF, #3F800000,
+                 #40900000, #3F800000, #40912345, #3F800000,
+                 #40A00000, #3F800000, #40A12345, #3F800000,
+                 #40B00000, #3F800000, #40B12345, #3F800000,
+                 #3F812345, #3F800000, #3F800000, #3F812345,
+                                       #3F800000, #7F800000,
+                 #7F800300, #3F800000, #3F800000, #7F800300] :
+      --}}}
+      SEQ i = 0 FOR NumberOfRemLoops
+        SEQ
+          --{{{  Load FpAreg and FpBreg
+          TestConstantBuffer := TestConstants [2*i]
+          --{{{  Load FpAreg
+          GUY
+            LDLP TestConstantBuffer
+            --{{{  fpldnlsn
+            PFIX  8
+            OPR  #E
+            --}}}
+          --}}}
+          TestConstantBuffer := TestConstants [(2*i) + 1]
+          --{{{  Load FpAreg and Push the Stack
+          GUY
+            LDLP TestConstantBuffer
+            --{{{  fpldnlsn
+            PFIX  8
+            OPR  #E
+            --}}}
+          --}}}
+          --}}}
+          --{{{  Exercise the Rem Logic
+          GUY
+            --{{{  fpremfirst
+            PFIX  8
+            OPR  #F
+            --}}}
+            EQC  0
+            CJ   4
+            --{{{  fpremstep      -- Loop Until Correct Answer Found.
+            PFIX  9
+            OPR   0
+            --}}}
+            CJ  -4
+          --}}}
+          --{{{  Store and Verify FpAreg
+          --{{{  Store to Result
+          GUY
+            LDLP Result
+            --{{{  fpstnlsn
+            PFIX  8
+            OPR   8
+            --}}}
+          --}}}
+          VerifySnResult (Pass, Result, ExpectedArray [Index] )
+          Index := Index + 1
+          --}}}
+          --{{{  Store and Verify FpBreg
+          --{{{  Store to Result
+          GUY
+            LDLP Result
+            --{{{  fpstnlsn
+            PFIX  8
+            OPR   8
+            --}}}
+          --}}}
+          VerifySnResult (Pass, Result, ExpectedArray [Index] )
+          Index := Index + 1
+          --}}}
+      --}}}
+      --{{{  Special Case
+      --   Created to deal with CRev Parts. See Comment at beginning of Sc.
+      --{{{  Definitions
+      VAL INT Inf IS #7F800000 :
+      VAL INT One IS #3F800000 :
+      VAL INT CRevResult IS #7F800000 :
+      VAL INT DRevResult IS #7F804000 :  -- Actually DRev and later
+      VAL INT BregResult IS #7F801000 :
+      --}}}
+      SEQ
+        --{{{  Load FpAreg and FpBreg
+        TestConstantBuffer := Inf
+        --{{{  Load FpAreg
+        GUY
+          LDLP TestConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        TestConstantBuffer := One
+        --{{{  Load FpAreg and Push the Stack
+        GUY
+          LDLP TestConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        --}}}
+        --{{{  Exercise the Rem Logic
+        GUY
+          --{{{  fpremfirst
+          PFIX  8
+          OPR  #F
+          --}}}
+          EQC  0
+          CJ   4
+          --{{{  fpremstep      -- Loop Until Correct Answer Found.
+          PFIX  9
+          OPR   0
+          --}}}
+          CJ  -4
+        --}}}
+        --{{{  Store and Verify FpAreg
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnlsn
+          PFIX  8
+          OPR   8
+          --}}}
+        --}}}
+        IF
+          (Result <> CRevResult) AND (Result <> DRevResult)
+            Pass := FALSE
+          TRUE
+            SKIP
+        --}}}
+        --{{{  Store and Verify FpBreg
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnlsn
+          PFIX  8
+          OPR   8
+          --}}}
+        --}}}
+        VerifySnResult (Pass, Result, ExpectedArray [Index] )
+        Index := Index + 1
+        --}}}
+      --}}}
+      --{{{  Square Root
+      VAL INT SqrtConstant IS #3F002EF6 :     --  Fraction Bits Set Pattern
+      SEQ
+        TestConstantBuffer := SqrtConstant
+        --{{{  Load FpAreg
+        GUY
+          LDLP TestConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        --{{{  Do the Square Root
+        GUY
+          --{{{  fpusqrtfirst
+          LDC  1
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtlast
+          LDC  3
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+        --}}}
+        --{{{  Store and Verify FpAreg
+        --{{{  Store FpAreg to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnlsn
+          PFIX  8
+          OPR   8
+          --}}}
+        --}}}
+        VerifySnResult (Pass, Result, ExpectedArray [Index] )
+        Index := Index + 1
+        --}}}
+      --}}}
+      --{{{  Further Rem Test
+      VAL INT RemConstant1 IS #0A7FFFFF :
+      VAL INT RemConstant2 IS #00FFFFEF :
+      SEQ
+        --{{{  Load FpAreg and FpBreg
+        --{{{  Load FpAreg
+        TestConstantBuffer := RemConstant1
+        GUY
+          LDLP TestConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        --{{{  Load FpAreg and Push the Stack
+        TestConstantBuffer := RemConstant2
+        GUY
+          LDLP TestConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        --}}}
+        --{{{  Exercise the Rem Logic
+        GUY
+          --{{{  fpremfirst
+          PFIX  8
+          OPR  #F
+          --}}}
+          EQC  0
+          CJ   4
+          --{{{  fpremstep      -- Loop Until Correct Answer Found.
+          PFIX  9
+          OPR   0
+          --}}}
+          CJ  -4
+        --}}}
+        --{{{  Store and Verify FpAreg
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnlsn
+          PFIX  8
+          OPR   8
+          --}}}
+        --}}}
+        VerifySnResult (Pass, Result, ExpectedArray [Index] )
+        Index := Index + 1
+        --}}}
+        --{{{  Store and Verify FpBreg
+        --{{{  Store to Result
+        GUY
+          LDLP Result
+          --{{{  fpstnlsn
+          PFIX  8
+          OPR   8
+          --}}}
+        --}}}
+        VerifySnResult (Pass, Result, ExpectedArray [Index] )
+        Index := Index + 1
+        --}}}
+      --}}}
+  :
+  --}}}
+  --{{{  OUTPUT channel array
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  --}}}
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass :
+  [16]BYTE message :
+  SEQ
+    --{{{  FP Div
+    VAL mess IS "?FP Divide" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpDiv(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  FP convert
+    VAL mess IS "?FP Convert" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpConv(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  Datapath 3
+    VAL mess IS "?FP Datapath 3" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpDpath3(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+--
+--  eof
+--

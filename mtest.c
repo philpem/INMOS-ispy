@@ -170,7 +170,6 @@ void sendparams(LINK TheLink, struct tpstats *p, int quick, long endaddr)
 	int i;
 	int r;
 	
-	printf("sendparams\n");
 	q = (struct meminfo *) p->extra;
 	params[0] = (unsigned char) (p->tpid & 0xFF);
 	params[1] = (unsigned char) (p->tpid >> 8);

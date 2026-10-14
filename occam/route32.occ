@@ -1,0 +1,19 @@
+
+-- --------------------------------------------------
+--
+--    route32.occ  --  vestigial router for 32bit TPs
+--
+-- --------------------------------------------------
+
+#INCLUDE "checklib.occ"
+
+PROC route32(VAL INT bootchan)
+  VAL size.segment IS 200:
+  #INCLUDE "router.occ"
+  CHAN OF ANY in, out :
+  router(bootchan, in, out)
+:
+
+--
+--  eof
+--

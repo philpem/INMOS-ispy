@@ -1,0 +1,1147 @@
+
+-- --------------------------------------------------
+--
+--    test800d.occ  --  T8 test code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC test80xd(VAL INT boot)
+  --{{{  PROC FpRound    (BOOL Pass) 1372
+  PROC FpRound (BOOL Pass) -- 1372/25
+  
+    --{{{  Comment
+    
+    -- This Sc tests the Floating Point Rounding Modes.
+    
+    --}}}
+  
+    --{{{  Definitions
+    
+    --{{{  General Constants
+    
+    VAL INT NumberOfSnTests IS 30 :
+    VAL INT NumberOfDbTests IS 30 :
+    
+    VAL INT SnOne  IS 1 :
+    VAL INT SnMsBit IS #80000000 :
+    
+    VAL INT64 DbOne IS 1 (INT64) :
+    VAL INT64 DbMsBit IS #8000000000000000 (INT64) :
+    --}}}
+    
+    --{{{  FpRound Test Constants.
+    
+    --{{{  Comment
+    --   The total number of single length test constants is 60. However, there
+    -- exists a certain amount of duplication and the number of different test
+    -- constants is 29. Similarly there 60 double length test constants of which
+    -- 29 are different.
+    --}}}
+    
+    VAL INT NumberOfDifferentTestConstants IS 29 :
+    
+    --{{{  FpRoundSnConstants
+    VAL [NumberOfDifferentTestConstants]INT FpRoundSnConstants IS
+          [#3F800000, #3F800001,    --   1.0       (REAL32),   1.0..1     (REAL32)
+           #3F000001, #3E800001,    --   0.5..1    (REAL32),   0.25..1    (REAL32)
+           #3E000001, #3D800001,    --   0.125..1  (REAL32),   0.0625..1  (REAL32)
+           #3D000001, #3C800001,
+           #30000001, #10000001,    --   Small             ,   Very Small
+           #BF800001, #BF000001,    -- - 1.0..1    (REAL32), - 0.5..1     (REAL32)
+           #BE800001, #BE000001,    -- - 0.25..1   (REAL32), - 0.125..1   (REAL32)
+           #BD800001, #BD000001,    -- - 0.0625..1 (REAL32),
+           #BC800001, #B0000001,    --                     , - Small
+           #90000001, #00000000,    -- - Very Small        ,   0.0        (REAL32)
+           #80000000, #3E000000,    -- - 0.0       (REAL32),   0.125      (REAL32)
+           #3E000004, #3E000005,    --   0.125..4  (REAL32),   0.125..5   (REAL32)
+           #3E000008, #3E000009,    --   0.125..8  (REAL32),   0.125..9   (REAL32)
+           #3E00000C, #3E00000D,    --   0.125.12  (REAL32),   0.125.13   (REAL32)
+           #3F800010] :             --   > 1.0..1  (REAL32) -- Might be an error
+    --}}}
+    --{{{  FpRoundDbConstants
+    VAL [NumberOfDifferentTestConstants]INT64 FpRoundDbConstants IS
+         [#3FF0000000000000 (INT64),   --   1.0        (REAL64)
+          #3FF0000000000001 (INT64),   --   1.0..1     (REAL64)
+          #3FE0000000000001 (INT64),   --   0.5..1      (REAL64)
+          #3FD0000000000001 (INT64),   --   0.25..1    (REAL64)
+          #3FC0000000000001 (INT64),   --   0.125..1   (REAL64)
+          #3FB0000000000001 (INT64),   --   0.0625..1  (REAL64)
+          #3FA0000000000001 (INT64),   --
+          #3F90000000000001 (INT64),   --
+          #3000000000000001 (INT64),   --   Small
+          #1000000000000001 (INT64),   --   Very Small
+          #BFF0000000000001 (INT64),   -- - 1.0..1     (REAL64)
+          #BFE0000000000001 (INT64),   -- - 0.5..1     (REAL64)
+          #BFD0000000000001 (INT64),   -- - 0.25..1    (REAL64)
+          #BFC0000000000001 (INT64),   -- - 0.125..1   (REAL64)
+          #BFB0000000000001 (INT64),   -- - 0.0625..1  (REAL64)
+          #BFA0000000000001 (INT64),   --
+          #BF90000000000001 (INT64),   --
+          #B000000000000001 (INT64),   -- - Small
+          #9000000000000001 (INT64),   -- - Very Small
+          #0000000000000000 (INT64),   --   0.0        (REAL64)
+          #8000000000000000 (INT64),   -- - 0.0        (REAL64)
+          #3FC0000000000000 (INT64),   --   0.125      (REAL64)
+          #3FC0000000000004 (INT64),   --   0.125..4   (REAL64)
+          #3FC0000000000005 (INT64),   --   0.125..5   (REAL64)
+          #3FC0000000000008 (INT64),   --   0.125..8   (REAL64)
+          #3FC0000000000009 (INT64),   --   0.125..9   (REAL64)
+          #3FC000000000000C (INT64),   --   0.125.12   (REAL64)
+          #3FC000000000000D (INT64),   --   0.125.13   (REAL64)
+          #3FF0000000000001 (INT64)] : --   1.0..1     (REAL64)
+    --}}}
+    
+    --{{{  Comment
+    --   The following arrays allows the single and double length tests to be
+    -- put in a single loop as the i'th Test Constant is selected from the
+    -- i'th element of IndexArray. IndexArray is stored as bytes to minimise
+    -- memory demands.
+    --}}}
+    
+    VAL INT NumberOfTestConstants IS 60 :
+        --   The total number of single length test constants, (also equal to the
+        -- total number of double length test constants).
+    
+    --{{{  Index Array
+    VAL [NumberOfTestConstants]BYTE IndexArray IS
+      [BYTE  0, BYTE  1, BYTE  0, BYTE  2, BYTE  0, BYTE  3, BYTE  0, BYTE  4,
+       BYTE  0, BYTE  5, BYTE  0, BYTE  6, BYTE  0, BYTE  7, BYTE  0, BYTE  8,
+       BYTE  0, BYTE  9, BYTE 28, BYTE  9, BYTE  0, BYTE 10, BYTE  0, BYTE 11,
+       BYTE  0, BYTE 12, BYTE  0, BYTE 13, BYTE  0, BYTE 14, BYTE  0, BYTE 15,
+       BYTE  0, BYTE 16, BYTE  0, BYTE 17, BYTE  0, BYTE 18, BYTE 28, BYTE 18,
+       BYTE 19, BYTE 20, BYTE 20, BYTE 19, BYTE 21, BYTE  0, BYTE  4, BYTE  0,
+       BYTE 22, BYTE  0, BYTE 23, BYTE  0, BYTE 24, BYTE  0, BYTE 25, BYTE  0,
+       BYTE 26, BYTE  0, BYTE 27, BYTE  0] :
+    
+    --  Unlike FpDiv the same index array can be used for both double and single
+    -- length tests.
+    --}}}
+    --}}}
+    
+    --{{{  FpRound Expected Vector
+    
+    --   This array is used in verifying computed results. Computed results are
+    -- checked against the appropriate element(s) of this array.
+    --   It contains most of the dump file used in the testing rigs.
+    
+    --{{{  SnExpectedVector
+    VAL []INT SnExpectedVector IS
+      [#40000000, #3FC00000, #3FA00000, #3F900000, #3F880000, #3F840000,
+       #3F820000, #3F800000, #3F800000, #3F800010, #B4000000, #3EFFFFFE,
+       #3F400000, #3F600000, #3F700000, #3F780000, #3F7C0000, #3F800000,
+       #3F800000, #3F800010, #00000000, #00000000, #3F900000, #3F900001,
+       #3F900001, #3F900001, #3F900001, #3F900002, #3F900002, #3F900002] :
+    --}}}
+    --{{{  DbExpectedVector
+    VAL []INT DbExpectedVector IS
+      [#00000000, #40000000, #00000000, #3FF80000,
+       #00000000, #3FF40000, #00000000, #3FF20000,
+       #00000000, #3FF10000, #00000000, #3FF08000,
+       #00000000, #3FF04000, #00000000, #3FF00000,
+       #00000000, #3FF00000, #00000001, #3FF00000,
+       #00000000, #BCB00000, #FFFFFFFE, #3FDFFFFF,
+       #00000000, #3FE80000, #00000000, #3FEC0000,
+       #00000000, #3FEE0000, #00000000, #3FEF0000,
+       #00000000, #3FEF8000, #00000000, #3FF00000,
+       #00000000, #3FF00000, #00000001, #3FF00000,
+       #00000000, #00000000, #00000000, #00000000,
+       #00000000, #3FF20000, #00000001, #3FF20000,
+       #00000001, #3FF20000, #00000001, #3FF20000,
+       #00000001, #3FF20000, #00000002, #3FF20000,
+       #00000002, #3FF20000, #00000002, #3FF20000] :
+    --}}}
+    --}}}
+    
+    --{{{  Rounding Mode Constants
+    
+    --   The rounding mode entry points. These entry points should not constant
+    -- with respect to future parts.
+    
+    VAL INT FPURM IS  5 :
+    VAL INT FPURP IS  4 :
+    VAL INT FPURN IS 22 :
+    VAL INT FPURZ IS  6 :
+    --}}}
+    --}}}
+    --{{{  Proc's
+    --{{{  PROC DoSnTests (VAL INT roundingMode)
+    PROC DoSnTests (VAL INT roundingMode)
+    
+      --   This Proc performs the single length round tests for the given rounding
+      -- mode.
+    
+      SEQ i = 0 FOR NumberOfSnTests
+    
+        --{{{  Proc's and Declarations
+        --{{{  PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+        PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+        
+          --   Every Round test requires a computed result to be tested against a
+          -- known or expected value. This proc performs the testing.
+          -- The proc sets pass if result differs from expected.
+        
+          IF
+            result = expected
+              SKIP
+            TRUE
+              pass := FALSE
+        :
+        --}}}
+        --{{{  INT, INT FUNCTION DoSnRound (VAL INT FpAreg, FpBreg, RoundMode)
+        INT, INT FUNCTION DoSnRound (VAL INT FpAreg, FpBreg, RoundMode)
+        
+          -- This Proc does one single length round and add.
+        
+          INT LocalResult, fperror :
+          VALOF
+            GUY
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Load FpAreg and FpBreg
+              LDLP FpBreg
+              --{{{  fpldnlsn
+              PFIX  8
+              OPR  #E
+              --}}}
+              LDLP FpAreg
+              --{{{  fpldnlsn
+              PFIX  8
+              OPR  #E
+              --}}}
+              --}}}
+              --{{{  Set Rounding Mode
+              LDL  RoundMode
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpadd
+              PFIX  8
+              OPR   7
+              --}}}
+              --{{{  Store to LocalResult
+              LDLP LocalResult
+              --{{{  fpstnlsn
+              PFIX  8
+              OPR   8
+              --}}}
+              --}}}
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Store to fperror
+              STL fperror
+              --}}}
+            RESULT LocalResult, fperror
+        :
+        --}}}
+        --{{{  Declarations
+        INT   SnResult, SnExpected :
+                -- Used in comparing a computed result against an expected one.
+        INT FpError :
+        --}}}
+        --}}}
+        SEQ
+    
+          --{{{  Do a Single Length Round.
+          SnResult, FpError :=
+          DoSnRound ( FpRoundSnConstants [ INT IndexArray [(2*i) + 1] ],
+                      FpRoundSnConstants [ INT IndexArray [  2 * i  ] ],
+                      roundingMode)
+          --}}}
+    
+          --{{{  Check the Fpu Error Flag.
+          VAL INT True IS 1 :
+          IF
+            FpError = True
+              SKIP
+            TRUE
+              Pass := FALSE
+          --}}}
+    
+          --{{{  Set SnExpected.
+          SnExpected := SnExpectedVector [i]
+          CASE i
+            --{{{  0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+              IF
+                roundingMode = FPURP
+                  SnExpected := SnExpected + SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  12, 13, 14, 15, 16, 17, 18, 19, 25, 28, 29
+            12, 13, 14, 15, 16, 17, 18, 19, 25, 28, 29
+              IF
+                (roundingMode = FPURM) OR (roundingMode = FPURZ)
+                  SnExpected := SnExpected - SnOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  20, 21
+            20, 21
+              IF
+                roundingMode = FPURM
+                  SnExpected := SnExpected \/ SnMsBit  -- Set Sign to Minus.
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  23, 24, 27
+            23, 24, 27
+              IF
+                roundingMode = FPURP
+                  SKIP
+                TRUE
+                  SnExpected := SnExpected - SnOne
+            --}}}
+            --{{{  Else
+            ELSE
+              SKIP
+            --}}}
+          --}}}
+    
+          VerifySnResult (Pass, SnResult, SnExpected)
+    
+    :
+    --}}}
+    --{{{  PROC DoDbTests (VAL INT roundingMode)
+    PROC DoDbTests (VAL INT roundingMode)
+    
+      --   This Proc performs the double length round tests for the given rounding
+      -- mode.
+    
+      SEQ i = 0 FOR NumberOfDbTests
+    
+        --{{{  Proc's and Declarations
+        --{{{  PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+        PROC VerifyDbResult (BOOL pass, VAL INT64 result, expected)
+        
+          -- Every Round test requires a computed result to be tested against a
+          -- known or expected value. This proc performs the testing.
+          -- The proc sets pass if result differs from expected.
+        
+          IF
+            result = expected
+              SKIP
+            TRUE
+              pass := FALSE
+        :
+        --}}}
+        --{{{  INT64, INT FUNCTION DoDbRound (VAL INT64 FpAreg, FpBreg, VAL INT RM)
+        INT64, INT FUNCTION DoDbRound (VAL INT64 FpAreg, FpBreg, VAL INT RoundMode)
+        
+          -- This Proc does one double length round and add and stores the result.
+        
+          INT64 LocalResult :
+          INT fperror :
+          VALOF
+            GUY
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Load FpAreg and FpBreg
+              LDLP FpBreg
+              --{{{  fpldnldb
+              PFIX  8
+              OPR  #A
+              --}}}
+              LDLP FpAreg
+              --{{{  fpldnldb
+              PFIX  8
+              OPR  #A
+              --}}}
+              --}}}
+              --{{{  Set Rounding Mode
+              LDL  RoundMode
+              --{{{  fpentry
+              PFIX #A
+              OPR  #B
+              --}}}
+              --}}}
+              --{{{  fpadd
+              PFIX  8
+              OPR   7
+              --}}}
+              --{{{  Store to LocalResult
+              LDLP LocalResult
+              --{{{  fpstnldb
+              PFIX  8
+              OPR   4
+              --}}}
+              --}}}
+              --{{{  fptesterr
+              PFIX  9
+              OPR  #C
+              --}}}
+              --{{{  Store to fperror
+              STL fperror
+              --}}}
+            RESULT LocalResult, fperror
+        :
+        --}}}
+        --{{{  Declarations
+        INT64 DbResult, DbExpected :
+                -- Used in comparing a computed result against an expected one.
+        
+        INT FpError :
+        --}}}
+        --}}}
+        SEQ
+    
+          --{{{  Do a Double Length Round.
+          DbResult, FpError :=
+          DoDbRound ( FpRoundDbConstants [ INT IndexArray [(2*i) + 1] ],
+                      FpRoundDbConstants [ INT IndexArray [  2 * i  ] ],
+                      roundingMode)
+          --}}}
+    
+          --{{{  Check the Fpu Error Flag.
+          VAL INT True IS 1 :
+          IF
+            FpError = True
+              SKIP
+            TRUE
+              Pass := FALSE
+          --}}}
+    
+          --{{{  Set DbExpected
+          VAL INT64 expected RETYPES [DbExpectedVector FROM (2*i) FOR 2] :
+          DbExpected := expected
+          CASE i
+            --{{{  0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+              IF
+                roundingMode = FPURP
+                  DbExpected := DbExpected + DbOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  12, 13, 14, 15, 16, 17, 18, 19, 25, 28, 29
+            12, 13, 14, 15, 16, 17, 18, 19, 25, 28, 29
+              IF
+                (roundingMode = FPURM) OR (roundingMode = FPURZ)
+                  DbExpected := DbExpected - DbOne
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  20, 21
+            20, 21
+              IF
+                roundingMode = FPURM
+                  DbExpected := DbExpected \/ DbMsBit  -- Set Sign to Minus.
+                TRUE
+                  SKIP
+            --}}}
+            --{{{  23, 24, 27
+            23, 24, 27
+              IF
+                roundingMode = FPURP
+                  SKIP
+                TRUE
+                  DbExpected := DbExpected - DbOne
+            --}}}
+            --{{{  Else
+            ELSE
+              SKIP
+            --}}}
+          --}}}
+    
+          VerifyDbResult (Pass, DbResult, DbExpected)
+    :
+    --}}}
+    --}}}
+    SEQ
+      Pass := TRUE          -- Assume Device Okay Until Fault Found.
+      --{{{  Single Length Tests
+      DoSnTests (FPURM)
+      DoSnTests (FPURP)
+      DoSnTests (FPURN)
+      DoSnTests (FPURZ)
+      --}}}
+      --{{{  Double Length Tests
+      DoDbTests (FPURM)
+      DoDbTests (FPURP)
+      DoDbTests (FPURN)
+      DoDbTests (FPURZ)
+      --}}}
+  :
+  --}}}
+  --{{{  PROC FpAdd      (BOOL Pass) 1224
+  PROC FpAdd (BOOL Pass) -- 1224 /24
+  
+    --{{{  Comment
+    --   Do additions for all different types of single and double length
+    -- numbers, in all rounding modes.
+    --}}}
+  
+    --{{{  Definitions
+    VAL INT NumberOfRoundingModes IS 4 :
+    
+    
+    VAL [NumberOfRoundingModes]INT RMEntryPoints IS [6, 34, 4, 5] :
+    
+    -- VAL INT RoundZeroMode     IS  6 :   -- Entry Points
+    -- VAL INT RoundNearestMode  IS 34 :
+    -- VAL INT RoundPositiveMode IS  4 :
+    -- VAL INT RoundMinusMode    IS  5 :
+    
+    VAL INT False IS 0 :
+    VAL INT True  IS 1 :
+    --}}}
+    SEQ
+      --{{{  Initialisation
+      Pass := TRUE            -- Assume Device Okay Until Fault Found.
+      GUY
+        --{{{  fpuclearboolean    -- Clear the Fpu Boolean.
+        LDC  20
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+        --}}}
+        --{{{  fpuclearerror      -- Clear the Fpu Error.
+        LDC  156
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+        --}}}
+      --}}}
+      SEQ i = 0 FOR NumberOfRoundingModes
+        --{{{  Rounding Mode Definition and Abbreviations
+        VAL INT  RoundingMode IS RMEntryPoints [i] :
+        VAL BOOL RoundPositiveMode IS (i=2) :
+        VAL BOOL RoundMinusMode IS (i=3) :
+        --}}}
+        SEQ
+          --{{{  Single Length Tests
+          --{{{  Single Length Test Constants
+          VAL INT PlusZero      IS #00000000 :   --   0.0
+          VAL INT MinusZero     IS #80000000 :   -- - 0.0
+          VAL INT Denorm        IS #00000001 :
+          VAL INT Sqrt2         IS #3FB504F3 :   --   SQRT (2.0)
+          VAL INT Inf           IS #7F800000 :
+          VAL INT Nan           IS #7F800001 :
+          VAL INT OneDenorm     IS #3F800001 :   --   1.00..1
+          VAL INT SmallNorm     IS #30000001 :
+          VAL INT LargestDenorm IS #007FFFFF :
+          VAL INT LargestNorm   IS #7F7FFFFF :
+          VAL INT TwiceSqrt2    IS #403504F3 :   --   SQRT (2.0) + SQRT (2.0)
+          VAL INT TwiceDenorm   IS #00000002 :
+          VAL INT SmallNorm1    IS #307FFFFF :   -- SmallNorm1 = SmallNorm + SmallNorm
+          --}}}
+          --{{{  Proc's and Declarations
+          --{{{  PROC VerifySnResult (pass, result, expected, errorResult, errorExpected)
+          PROC VerifySnResult (BOOL pass, VAL INT result, expected,
+                                                  errorResult, errorExpected)
+          
+            -- Every FpAdd test requires a computed result to be tested against a
+            -- known or expected value. This proc performs the testing.
+            -- The proc sets pass if one of the results differs from one of the
+            -- expecteds.
+          
+            IF
+              (result = expected) AND (errorResult = errorExpected)
+                SKIP
+              TRUE
+                pass := FALSE
+          :
+          --}}}
+          --{{{  INT, INT FUNCTION DoSnAdd (VAL INT FAreg, FBreg, RoundingMode)
+          INT, INT FUNCTION DoSnAdd (VAL INT FAreg, FBreg, RoundingMode)
+          
+            --   This loads the Fpu A and B Registers and performs the add.
+            -- Note since the Sc must be compiled for a T4 the floating point
+            -- instructions have to be "hand coded".
+          
+            INT notFpError, Sum :
+            VALOF
+              GUY
+                --{{{  load fpbreg
+                LDLP  FBreg
+                --{{{  fpldnlsn
+                PFIX  8
+                OPR  #E
+                --}}}
+                --}}}
+                --{{{  load fpareg
+                LDLP  FAreg
+                --{{{  fpldnlsn
+                PFIX  8
+                OPR  #E
+                --}}}
+                --}}}
+                --{{{  set rounding mode
+                LDL  RoundingMode
+                --{{{  fpentry
+                PFIX #A
+                OPR  #B
+                --}}}
+                --}}}
+                --{{{  fpadd
+                PFIX  8
+                OPR   7
+                --}}}
+                --{{{  fptesterr
+                PFIX  9
+                OPR  #C
+                --}}}
+                --{{{  store the fperror
+                LDLP  notFpError
+                STNL  0
+                --}}}
+                --{{{  store the sum
+                LDLP Sum
+                --{{{  fpstnlsn
+                PFIX  8
+                OPR   8
+                --}}}
+                --}}}
+              RESULT notFpError, Sum
+          :
+          --}}}
+          INT SnResult, SnExpected, NotFpError :
+          --}}}
+          SEQ
+            --{{{  Initialisation
+            SnResult   := -1            -- Not the first expected value.
+            NotFpError :=  2            -- Not True or False.
+            --}}}
+            --{{{  Test  1
+            NotFpError, SnResult := DoSnAdd (Sqrt2, Sqrt2, RoundingMode)
+            VerifySnResult (Pass, SnResult, TwiceSqrt2, NotFpError, True)
+            --}}}
+            --{{{  Test  2
+            NotFpError, SnResult := DoSnAdd (PlusZero, PlusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, PlusZero, NotFpError, True)
+            --}}}
+            --{{{  Test  3
+            NotFpError, SnResult := DoSnAdd (MinusZero, PlusZero, RoundingMode)
+            --{{{  Set SnExpected
+            IF
+              NOT RoundMinusMode
+                SnExpected := PlusZero
+              TRUE
+                SnExpected := MinusZero
+            --}}}
+            VerifySnResult (Pass, SnResult, SnExpected, NotFpError, True)
+            --}}}
+            --{{{  Test  4
+            NotFpError, SnResult := DoSnAdd (PlusZero, MinusZero, RoundingMode)
+            --{{{  Set SnExpected
+            IF
+              NOT RoundMinusMode
+                SnExpected := PlusZero
+              TRUE
+                SnExpected := MinusZero
+            --}}}
+            VerifySnResult (Pass, SnResult, SnExpected, NotFpError, True)
+            --}}}
+            --{{{  Test  5
+            NotFpError, SnResult := DoSnAdd (MinusZero, MinusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, MinusZero, NotFpError, True)
+            --}}}
+            --{{{  Test  6
+            NotFpError, SnResult := DoSnAdd (Denorm, PlusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, Denorm, NotFpError, True)
+            --}}}
+            --{{{  Test  7
+            NotFpError, SnResult := DoSnAdd (OneDenorm, PlusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, OneDenorm, NotFpError, True)
+            --}}}
+            --{{{  Test  8
+            NotFpError, SnResult := DoSnAdd (Inf, PlusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, Inf, NotFpError, False)
+            --}}}
+            --{{{  Test  9
+            NotFpError, SnResult := DoSnAdd (Nan, PlusZero, RoundingMode)
+            VerifySnResult (Pass, SnResult, Nan, NotFpError, False)
+            --}}}
+            --{{{  Test 10
+            NotFpError, SnResult := DoSnAdd (PlusZero, Denorm, RoundingMode)
+            VerifySnResult (Pass, SnResult, Denorm, NotFpError, True)
+            --}}}
+            --{{{  Test 11
+            NotFpError, SnResult := DoSnAdd (Denorm, Denorm, RoundingMode)
+            VerifySnResult (Pass, SnResult, TwiceDenorm, NotFpError, True)
+            --}}}
+            --{{{  Test 12
+            NotFpError, SnResult := DoSnAdd (TwiceDenorm, LargestDenorm, RoundingMode)
+            VerifySnResult (Pass, SnResult, LargestDenorm + 2, NotFpError, True)
+            --}}}
+            --{{{  Test 13
+            NotFpError, SnResult := DoSnAdd (SmallNorm, Denorm, RoundingMode)
+            --{{{  Set SnExpected
+            IF
+              NOT RoundPositiveMode
+                SnExpected := SmallNorm
+              TRUE
+                SnExpected := SmallNorm + 1
+            --}}}
+            VerifySnResult (Pass, SnResult, SnExpected, NotFpError, True)
+            --}}}
+            --{{{  Test 14
+            NotFpError, SnResult := DoSnAdd (SmallNorm1, Denorm, RoundingMode)
+            --{{{  Set SnExpected
+            IF
+              NOT RoundPositiveMode
+                SnExpected := SmallNorm1
+              TRUE
+                SnExpected := SmallNorm1 + 1
+            --}}}
+            VerifySnResult (Pass, SnResult, SnExpected, NotFpError, True)
+            --}}}
+            --{{{  Test 15
+            INT LocalError :
+            SEQ
+              NotFpError, SnResult := DoSnAdd (LargestNorm, Denorm, RoundingMode)
+              --{{{  Set SnExpected and LocalError
+              IF
+                NOT RoundPositiveMode
+                  SEQ
+                    SnExpected := LargestNorm
+                    LocalError := True
+                TRUE
+                  SEQ
+                    SnExpected := LargestNorm + 1
+                    LocalError := False
+              --}}}
+              VerifySnResult (Pass, SnResult, SnExpected, NotFpError, LocalError)
+            --}}}
+          --}}}
+          --{{{  Double Length Tests
+          --{{{  Double Length Test Constants
+          VAL INT64 PlusZero      IS #0000000000000000 (INT64) : --   0.0
+          VAL INT64 MinusZero     IS #8000000000000000 (INT64) : -- - 0.0
+          VAL INT64 Denorm        IS #0000000000000001 (INT64) :
+          VAL INT64 Sqrt2         IS #3FF6A09E667F3BCD (INT64) : -- Sqrt (2.0)
+          VAL INT64 Inf           IS #7FF0000000000000 (INT64) :
+          VAL INT64 Nan           IS #7FF0000000000001 (INT64) :
+          VAL INT64 OneDenorm     IS #3FF0000000000001 (INT64) : -- 1.00..1
+          VAL INT64 SmallNorm     IS #3000000000000001 (INT64) : -- Small Norm
+          VAL INT64 LargestDenorm IS #000FFFFFFFFFFFFF (INT64) :
+          VAL INT64 LargestNorm   IS #7FEFFFFFFFFFFFFF (INT64) :
+          VAL INT64 TwiceSqrt2    IS #4006A09E667F3BCD (INT64) : -- SQRT(2.0) + SQRT(2.0)
+          VAL INT64 TwiceDenorm   IS #0000000000000002 (INT64) :
+          VAL INT64 SmallNorm1    IS #300FFFFFFFFFFFFF (INT64) : -- SmallNorm + SmallNorm
+          
+          VAL INT64 One IS 1 (INT64) :
+          VAL INT64 Two IS 2 (INT64) :
+          --}}}
+          --{{{  Proc's and Declarations
+          --{{{  PROC VerifyDbResult (pass, result, expected, errorResult, errorExpected)
+          PROC VerifyDbResult (BOOL pass, VAL INT64 result,      expected,
+                                          VAL INT   errorResult, errorExpected)
+          
+            -- Every FpAdd test requires a computed result to be tested against a
+            -- known or expected value. This proc performs the testing.
+            -- The proc sets pass if one of the results differs from one of the
+            -- expecteds.
+          
+            IF
+              (result = expected) AND (errorResult = errorExpected)
+                SKIP
+              TRUE
+                pass := FALSE
+          :
+          --}}}
+          --{{{  INT, INT64 FUNCTION DoDbAdd (FAreg, FBreg, RoundingMode)
+          INT, INT64 FUNCTION DoDbAdd (VAL INT64 FAreg, FBreg, VAL INT RoundingMode)
+          
+            --   This loads the Fpu A and B Registers and performs the add .
+            -- Note since the Sc must be compiled for a T4 the floating point
+            -- instructions have to be "hand coded".
+          
+            INT64 Sum :
+            INT notFpError :
+            VALOF
+              GUY
+                --{{{  load fpbreg
+                LDLP  FBreg
+                --{{{  fpldnldb
+                PFIX  8
+                OPR  #A
+                --}}}
+                --}}}
+                --{{{  load fpareg
+                LDLP  FAreg
+                --{{{  fpldnldb
+                PFIX  8
+                OPR  #A
+                --}}}
+                --}}}
+                --{{{  set rounding mode
+                LDL  RoundingMode
+                --{{{  fpentry
+                PFIX #A
+                OPR  #B
+                --}}}
+                --}}}
+                --{{{  fpadd
+                PFIX  8
+                OPR   7
+                --}}}
+                --{{{  fptesterr
+                PFIX  9
+                OPR  #C
+                --}}}
+                --{{{  store the fperror
+                LDLP  notFpError
+                STNL  0
+                --}}}
+                --{{{  store the sum
+                LDLP Sum
+                --{{{  fpstnldb
+                PFIX  8
+                OPR   4
+                --}}}
+                --}}}
+              RESULT notFpError, Sum
+          :
+          --}}}
+          INT64 DbResult, DbExpected :
+          INT NotFpError :
+          --}}}
+          SEQ
+            --{{{  Initialisation
+            DbResult   := -1 (INT64)    -- Not the first expected value.
+            NotFpError :=  2            -- Not True or False.
+            --}}}
+            --{{{  Test  1
+            NotFpError, DbResult := DoDbAdd (Sqrt2, Sqrt2, RoundingMode)
+            VerifyDbResult (Pass, DbResult, TwiceSqrt2, NotFpError, True)
+            --}}}
+            --{{{  Test  2
+            NotFpError, DbResult := DoDbAdd (PlusZero, PlusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, PlusZero, NotFpError, True)
+            --}}}
+            --{{{  Test  3
+            NotFpError, DbResult := DoDbAdd (MinusZero, PlusZero, RoundingMode)
+            --{{{  Set DbExpected
+            IF
+              NOT RoundMinusMode
+                DbExpected := PlusZero
+              TRUE
+                DbExpected := MinusZero
+            --}}}
+            VerifyDbResult (Pass, DbResult, DbExpected, NotFpError, True)
+            --}}}
+            --{{{  Test  4
+            NotFpError, DbResult := DoDbAdd (PlusZero, MinusZero, RoundingMode)
+            --{{{  Set DbExpected
+            IF
+              NOT RoundMinusMode
+                DbExpected := PlusZero
+              TRUE
+                DbExpected := MinusZero
+            --}}}
+            VerifyDbResult (Pass, DbResult, DbExpected, NotFpError, True)
+            --}}}
+            --{{{  Test  5
+            NotFpError, DbResult := DoDbAdd (MinusZero, MinusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, MinusZero, NotFpError, True)
+            --}}}
+            --{{{  Test  6
+            NotFpError, DbResult := DoDbAdd (Denorm, PlusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, Denorm, NotFpError, True)
+            --}}}
+            --{{{  Test  7
+            NotFpError, DbResult := DoDbAdd (OneDenorm, PlusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, OneDenorm, NotFpError, True)
+            --}}}
+            --{{{  Test  8
+            NotFpError, DbResult := DoDbAdd (Inf, PlusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, Inf, NotFpError, False)
+            --}}}
+            --{{{  Test  9
+            NotFpError, DbResult := DoDbAdd (Nan, PlusZero, RoundingMode)
+            VerifyDbResult (Pass, DbResult, Nan, NotFpError, False)
+            --}}}
+            --{{{  Test 10
+            NotFpError, DbResult := DoDbAdd (PlusZero, Denorm, RoundingMode)
+            VerifyDbResult (Pass, DbResult, Denorm, NotFpError, True)
+            --}}}
+            --{{{  Test 11
+            NotFpError, DbResult := DoDbAdd (Denorm, Denorm, RoundingMode)
+            VerifyDbResult (Pass, DbResult, TwiceDenorm, NotFpError, True)
+            --}}}
+            --{{{  Test 12
+            NotFpError, DbResult := DoDbAdd (TwiceDenorm, LargestDenorm, RoundingMode)
+            VerifyDbResult (Pass, DbResult, LargestDenorm + Two, NotFpError, True)
+            --}}}
+            --{{{  Test 13
+            NotFpError, DbResult := DoDbAdd (SmallNorm, Denorm, RoundingMode)
+            --{{{  Set DbExpected
+            IF
+              NOT RoundPositiveMode
+                DbExpected := SmallNorm
+              TRUE
+                DbExpected := SmallNorm + One
+            --}}}
+            VerifyDbResult (Pass, DbResult, DbExpected, NotFpError, True)
+            --}}}
+            --{{{  Test 14
+            NotFpError, DbResult := DoDbAdd (SmallNorm1, Denorm, RoundingMode)
+            --{{{  Set DbExpected
+            IF
+              NOT RoundPositiveMode
+                DbExpected := SmallNorm1
+              TRUE
+                DbExpected := SmallNorm1 + One
+            --}}}
+            VerifyDbResult (Pass, DbResult, DbExpected, NotFpError, True)
+            --}}}
+            --{{{  Test 15
+            INT LocalError :
+            SEQ
+              NotFpError, DbResult := DoDbAdd (LargestNorm, Denorm, RoundingMode)
+              --{{{  Set DbExpected and LocalError
+              IF
+                NOT RoundPositiveMode
+                  SEQ
+                    DbExpected := LargestNorm
+                    LocalError := True
+                TRUE
+                  SEQ
+                    DbExpected := LargestNorm + One
+                    LocalError := False
+              --}}}
+              VerifyDbResult (Pass, DbResult, DbExpected, NotFpError, LocalError)
+            --}}}
+          --}}}
+  :
+  --}}}
+  --{{{  PROC FpShift    (BOOL Pass)  584
+  PROC FpShift (BOOL Pass)  -- 584/19 CODE/WS
+  
+    --{{{  Comment
+    --           Test Shifter/Normaliser (Walk bit thro data pattern)
+    
+    --   The Fpu shifter is tested by generating bit patterns using the shifter
+    -- and comparing these patterns against expected bit patterns. The shifter is
+    -- employed by invoking the fpadd instruction.
+    
+    --   In order to reduce the amount of memory required to do the comparisons
+    -- some of the expected bit patterns are generated at run time as are some of
+    -- the arguments that the fpadd requires.
+    
+    --   This program was generated from the hex file currently used on the rigs,
+    -- (Sep 88). The order in which the tests occur has been preserved in this
+    -- program and this has sometimes meant sacrificing memory space and other
+    -- obvious optimisations. In order to fully appreciate the bit patterns used
+    -- it is probably necessarey to look at the "root" hex file and the
+    -- corresponding dump file.
+    
+    -- Notes : If the way in which expected bit patterns are generated at run
+    -- time is equivalent to the way in which the alu has generated the bit
+    -- pattern the test is obviously invalid.
+    --   The possibility of an error occurring in both methods that produces
+    -- equivalent bit patterns is assumed to be negligible.
+    --}}}
+  
+    --{{{  Definitions
+    VAL INT64 Real64PlusOne     IS #3FF0000000000000 (INT64) :  --   1.0 (REAL64)
+    VAL INT64 Real64PlusTwo     IS #4000000000000000 (INT64) :  --   2.0 (REAL64)
+    VAL INT64 Real64MinusOne    IS #BFF0000000000000 (INT64) :  -- - 1.0 (REAL64)
+    VAL INT64 Real64Denorm      IS #0000000000000001 (INT64) :
+    VAL INT64 Real64LargestNorm IS #7FEFFFFFFFFFFFFF (INT64) :
+    VAL INT64 Real64MsbFrac     IS #0008000000000000 (INT64) :
+    
+    VAL INT64 Zero  IS 0 (INT64) :
+    VAL INT64 One   IS 1 (INT64) :
+    VAL INT64 Two   IS 2 (INT64) :
+    VAL INT64 Three IS 3 (INT64) :
+    
+    VAL INT BitsInFrac IS 52 :  -- Number of Frac bits in Double Length.
+    --}}}
+    --{{{  Proc's and Declarations
+    --{{{  PROC VerifyResult (BOOL pass, VAL INT64 result, expected)
+    PROC VerifyResult (BOOL pass, VAL INT64 result, expected)
+    
+      -- Every Shifter test requires a computed result to be tested against a
+      -- known or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    --{{{  INT64 FUNCTION DoShift (VAL INT64 FAreg, FBreg)
+    INT64 FUNCTION DoShift (VAL INT64 FAreg, FBreg)
+    
+      --   This loads the Fpu A and B Registers, performs the shift via Fpadd
+      -- and stores the result. Note since the Sc must be compiled for a T4
+      -- the floating point instructions have to be hand coded.
+    
+      INT64 TempResult :
+      VALOF
+        GUY
+          LDLP  FBreg
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          LDLP  FAreg
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --{{{  fpadd
+          PFIX  8
+          OPR   7
+          --}}}
+          LDLP  TempResult
+          --{{{  fpstnldb
+          PFIX  8
+          OPR   4
+          --}}}
+        RESULT TempResult
+    :
+    --}}}
+    
+    INT64 Result, Expected :  -- Used to compare a computed result against an
+                                                         -- expected value.
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass     := TRUE          -- Assume Device Okay Until Fault Found.
+      Result   := 0 (INT64)     -- Not one of the Expected Values.
+      Expected := -1 (INT64)    -- Different to Result.
+      --}}}
+      --{{{  Test   1
+      Result := DoShift (Real64PlusOne, Real64PlusOne)
+      VerifyResult (Pass, Result, Real64PlusTwo)
+      --}}}
+      --{{{  Tests  2 to 17
+      SEQ i = 0 FOR 16
+        INT64 TempAreg :
+        SEQ
+          TempAreg := (INT64 (#3FE - i)) << BitsInFrac
+          Result   := DoShift (TempAreg, Real64PlusOne)
+          Expected := (Real64MsbFrac >> i) \/ Real64PlusOne
+          VerifyResult (Pass, Result, Expected)
+      --}}}
+      --{{{  Tests 18 and 19
+      Result := DoShift (#3DE0000000000000 (INT64), Real64PlusOne)
+      VerifyResult (Pass, Result, #3FF0000000080000 (INT64))
+      Result := DoShift (#3DF0000000000000 (INT64), Real64PlusOne)
+      VerifyResult (Pass, Result, #3FF0000000100000 (INT64))
+      --}}}
+      --{{{  Tests 20 to 31
+      SEQ i = 0 FOR 12
+        INT64 TempAreg :
+        SEQ
+          TempAreg := (INT64 (#3CF - i)) << BitsInFrac
+          Result   := DoShift (TempAreg, Real64PlusOne)
+          Expected := (#10 (INT64) >> i) \/ Real64PlusOne
+          VerifyResult (Pass, Result, Expected)
+      --}}}
+      --{{{  Tests 32 to 35
+      VAL [2]INT64 LocalExpected IS [#3CB0000000000000 (INT64),
+                                                 #3CC0000000000000 (INT64)] :
+      SEQ
+      
+        Result := DoShift (Real64PlusOne + One, Real64MinusOne)
+        VerifyResult (Pass, Result, LocalExpected [0])
+      
+        Result := DoShift (Real64MinusOne, Real64PlusOne + One)
+        VerifyResult (Pass, Result, LocalExpected [0])
+      
+        Result := DoShift (Real64MinusOne, Real64PlusOne + Two)
+        VerifyResult (Pass, Result, LocalExpected [1])
+      
+        Result := DoShift (Real64MinusOne, Real64PlusOne + Three)
+        VerifyResult (Pass, Result, LocalExpected [1] \/ Real64MsbFrac)
+      --}}}
+      --{{{  Tests 36 to 85
+      SEQ i = 0 FOR 50
+        INT64 TempBreg :
+        SEQ
+          TempBreg := (#4 (INT64) << i) \/ Real64PlusOne
+          Result   := DoShift (Real64MinusOne, TempBreg)
+          Expected := (INT64 (#3CD + i)) << BitsInFrac
+          VerifyResult (Pass, Result, Expected)
+      --}}}
+      --{{{  Tests 86 to 88
+      Result := DoShift (Real64MinusOne, Real64PlusOne)
+      VerifyResult (Pass, Result, Zero)
+      
+      Result := DoShift (Real64MinusOne, Real64PlusTwo)
+      VerifyResult (Pass, Result, Real64PlusOne)
+      
+      Result := DoShift (Real64LargestNorm, Real64Denorm)
+      VerifyResult (Pass, Result, Real64LargestNorm )
+      --}}}
+  :
+  --}}}
+  --{{{  OUTPUT channel DECLs
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  --}}}
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass :
+  [16]BYTE message :
+  SEQ
+    --{{{  FP Add
+    VAL mess IS "?FP Add" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpAdd(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  FP Shift
+    VAL mess IS "?FP Shift" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpShift(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  FP round
+    VAL mess IS "?FP round" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpRound(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+
+--
+--  eof
+--

@@ -1,0 +1,557 @@
+
+-- --------------------------------------------------
+--
+--    testt32b.occ  --  TA test code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC testt32b(VAL INT boot)
+  --   Some functional test procedures, ie those that only include listed
+  -- transputer instructions can be used for all parts, irrespective of type
+  -- or revision. The following functional tests employ only listed transputer
+  -- instructions.
+  --{{{  PROC TimeTX  (BOOL Pass)      -- T4/T8
+  PROC TimeTX (BOOL Pass)
+  
+    --{{{  Comment
+    --   Version to check variation in time results do not hide uncertainty.
+    
+    --   Test timer can increment, can cause interrupts from any bit position in
+    -- comparator registers, and gives correct count in processor cycles.
+    --   Check that the timeout occurs once every 1 to 2 millisecs at low
+    -- priority only, by using the processor to monitor the length of time taken
+    -- in a loop; do not write all loop times to memory due to uncertainty of
+    -- timeout relative to processor.
+    
+    --   Note that the unused timer does not cause interrupts every 24 hrs.
+    -- on T414b.
+    
+    --   High priority timer (ticks at full rate)
+    --   Low priority timer (ticks at 1/64 of full rate)
+    --}}}
+    --{{{  Decs
+    TIMER Clock :
+    
+    VAL BitsInWord IS 32 :
+    
+    VAL INT LowPriTicks IS 64 :     --   Low Pri Clock 64 times slower than High
+                                    -- Pri clock.
+    
+    VAL INT ErroneousSpeed IS -1 :  --   Used to initialise Cycles Per Tick.
+    
+    INT Result, Expected :
+      -- These are used to compare a computed result against an expected value.
+    
+    INT CyclesPerTick :          -- Indicates the speed at which the part is
+                                 -- running.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT expected)
+    
+      -- Due to the inherent uncertainties in measuring times all tests are
+      -- achieved by looking at differences between a timer input and an expected
+      -- value and comparing this difference to a given tolerance.
+      -- This proc performs the testing.
+      -- The proc sets pass if result differs from expected.
+    
+      VAL INT DeltaTime IS 2 :   -- Amount of tolerance
+      INT TimeDiff :
+      SEQ
+        --{{{  Set TimeDiff
+        IF
+          expected > result
+            TimeDiff := expected MINUS result
+          TRUE
+            TimeDiff := result MINUS expected
+        --}}}
+        IF
+          TimeDiff <= DeltaTime
+            SKIP
+          TRUE
+            pass := FALSE
+    :
+    --}}}
+    --{{{  PROC DetermineSpeed (INT Speed)
+    PROC DetermineSpeed (INT Speed)
+    
+      -- Determines the CyclesPerTick of the Device under test.
+    
+      TIMER Clock :
+      INT Before, After, Ticks :
+      SEQ
+        Clock ? Before
+        --{{{  Delay by 256000 Cycles
+        GUY
+          LDC    1
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+          --{{{
+          LDC 32000
+          SHL
+          --}}}
+        --}}}
+        Clock ? After
+        Ticks := After MINUS Before
+        VAL []INT TicksArray IS [200, 267, 228, 178, 333, 160, 133] :
+        VAL []INT SpeedArray IS [ 20,  15,  17,  22,  12,  25,  30] :
+        --{{{  INT FUNCTION Modulus (VAL INT Arg)
+        INT FUNCTION Modulus (VAL INT Arg)
+          INT Pos :
+          VALOF
+            IF
+              Arg < 0
+                Pos := (-Arg)
+              TRUE
+                Pos := Arg
+            RESULT Pos
+        :
+        --}}}
+        INT TimeDiff :
+        SEQ i = 0 FOR (SIZE SpeedArray)
+          SEQ
+            TimeDiff := Modulus (Ticks - TicksArray [i])
+            IF
+              TimeDiff <= 2
+                Speed := SpeedArray [i]
+              TRUE
+                SKIP
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass     := TRUE           -- Assume Device Okay Until Fault Found.
+      Result   := #EEEEEEEE      -- Not one of the Expected Values.
+      CyclesPerTick := ErroneousSpeed
+      DetermineSpeed (CyclesPerTick)
+      --}}}
+      IF
+        --{{{  Speed Definitely Incorrect Set Pass to False and Finish
+        CyclesPerTick = ErroneousSpeed
+          Pass := FALSE
+        --}}}
+        --{{{  Otherwise do the rest of the tests.
+        TRUE
+          SEQ
+            --{{{  Clear the STATUS register
+            -- first clear the STATUSreg to ensure that the .dmp file is consistent
+            -- for all parts (powers up with error and/or single step bits set)
+            GUY
+              LDC   0
+              TESTSTS             -- clear non-single-step bits
+              STEP REV            -- clear single-step bits
+              LDC   0             -- clear Oreg and push stack
+            --}}}
+            --{{{  Check that the high and low clock registers increment asynchronously
+            VAL INT NumberOfTicks IS 6 :
+            PRI PAR
+              --{{{  Check each bit of HCLOCKreg increments asynchronously
+              SEQ i = 0 FOR BitsInWord
+                INT Source, TimeDiff :
+                SEQ
+                  Source := (1 << i) - 3
+                  --{{{  Increment HClock from known bit pattern and wait for given time
+                  INT ShiftConstant :
+                  SEQ
+                    ShiftConstant := NumberOfTicks * CyclesPerTick  -- Approx 6 Hi Pri Tick
+                    --{{{  Make up the half for -17 and -22 parts
+                    VAL INT Adjustment IS NumberOfTicks / 2 :
+                    IF
+                      (CyclesPerTick = 17) OR (CyclesPerTick =22)
+                        ShiftConstant := ShiftConstant + Adjustment
+                      TRUE
+                        SKIP
+                    --}}}
+                    GUY
+                      LDL   Source
+                      STTIMER
+                      -- wait for at least 4 ticks, but less than 8 ticks,
+                      -- to allow for +/- 2 tick uncertainty
+                      --{{{  Wait for Approximately 6 High Pri Ticks (Error + or - 2)
+                      LDC  1
+                      LDL  ShiftConstant
+                      SHL
+                      --}}}
+                  --}}}
+                  Clock ? Result
+                  TimeDiff := Result - Source
+                  IF
+                    --{{{  Possibly Correct
+                    (TimeDiff >= 4) AND (TimeDiff <= 8)    -- May be correct result
+                      SEQ
+                        Expected := (1 << i) + 3
+                        VerifyResult (Pass, Result, Expected)
+                    --}}}
+                    --{{{  Definitely InCorrect
+                    TRUE                                   -- Did not increment correctly
+                      Pass := FALSE
+                    --}}}
+              --}}}
+              --{{{  Check each bit of LCLOCKreg increments asynchronously
+              SEQ i = 0 FOR BitsInWord
+                INT Source, TimeDiff :
+                SEQ
+                  Source := (1 << i) - 3
+                  --{{{  Increment LClock from known bit and wait for given time.
+                  INT ShiftConstant :
+                  SEQ
+                    ShiftConstant := (NumberOfTicks * LowPriTicks) * CyclesPerTick
+                                                        -- Approximately 6 LowPri Ticks
+                    --{{{  Make up the half for -17 and -22 parts
+                    VAL INT Adjustment IS (NumberOfTicks * LowPriTicks) / 2 :
+                    IF
+                      (CyclesPerTick = 17) OR (CyclesPerTick =22)
+                        ShiftConstant := ShiftConstant + Adjustment
+                      TRUE
+                        SKIP
+                    --}}}
+                    GUY
+                      LDL   Source
+                      STTIMER
+                      --{{{  Wait for Approximately 6 Low Pri Ticks (Error + or - 2)
+                      LDC  1
+                      LDL  ShiftConstant
+                      SHL
+                      --}}}
+                  --}}}
+                  Clock ? Result
+                  TimeDiff := Result - Source
+                  IF
+                    --{{{  Possibly Correct
+                    (TimeDiff >= 4) AND (TimeDiff <= 8)       -- Correct TimeDiff
+                      SEQ
+                        Expected := ( 1 << i  ) + 3
+                        VerifyResult (Pass, Result, Expected)
+                    --}}}
+                    --{{{  Definitely InCorrect
+                    TRUE                          -- Did not increment correctly
+                      Pass := FALSE
+                    --}}}
+              --}}}
+            --}}}
+            --{{{  Check each bit of low  pri timer comparator register
+            -- Causes a timer interrupt
+            -- low priority timer (ticks at 1/64 of full rate)
+            SEQ i = 0 FOR BitsInWord
+              INT Source :
+              SEQ
+                Source := (1 << i) - #1   -- allow time to set up timer input
+                --{{{  Start Timer from Source
+                GUY
+                  LDL   Source
+                  STTIMER
+                --}}}
+                Clock ? AFTER Source + #1  -- wait until after bit position reached
+                Clock ? Result
+                Expected := (1 << i) + 1
+                VerifyResult (Pass, Result, Expected)
+            --}}}
+            --{{{  Check each bit of high pri timer comparator register
+            -- check each bit of the high priority timer comparator register
+            -- causes a timer interrupt due to equality in the comparator.
+            PRI PAR
+              --{{{  High Pri Timer
+              SEQ i = 0 FOR BitsInWord
+                INT Source :
+                SEQ
+                  Source := (1 << i) - #10          -- allow time to set up timer input
+                  --{{{  Start Timer from Source
+                  GUY
+                    LDL   Source
+                    STTIMER
+                  --}}}
+                  Clock ? AFTER Source + #10        -- wait until after bit position reached
+                  Clock ? Result
+                  Expected := (1 << i) + 3
+                  VerifyResult (Pass, Result, Expected)
+              --}}}
+              SKIP
+            --}}}
+            --{{{  Check time measurements against number of executed cycles
+            VAL INT NumberOfTicks IS #00000084 :
+            PRI PAR
+              --{{{  High Pri Timer
+              INT Before, After, ShiftConstant :
+              SEQ
+                ShiftConstant := CyclesPerTick * NumberOfTicks
+                --{{{  Make up the half for -17 and -22 parts
+                VAL INT Adjustment IS NumberOfTicks / 2 :
+                IF
+                  (CyclesPerTick = 17) OR (CyclesPerTick =22)
+                    ShiftConstant := ShiftConstant + Adjustment
+                  TRUE
+                    SKIP
+                --}}}
+                Clock ? Before
+                --{{{  Delay by known amount
+                GUY
+                  LDC  1
+                  LDL  ShiftConstant        -- Produce NumberofTicks In Timer Reg
+                  SHL
+                --}}}
+                Clock ? After
+                Result := After MINUS Before
+                VerifyResult (Pass, Result, NumberOfTicks)
+              --}}}
+              --{{{  Low Pri Timer
+              INT Before, After, ShiftConstant :
+              SEQ
+                ShiftConstant := (CyclesPerTick * NumberOfTicks) * LowPriTicks
+                --{{{  Make up the half for -17 and -22 parts
+                VAL INT Adjustment IS (NumberOfTicks / 2) * LowPriTicks :
+                IF
+                  (CyclesPerTick = 17) OR (CyclesPerTick = 22)
+                    ShiftConstant := ShiftConstant + Adjustment
+                  TRUE
+                    SKIP
+                --}}}
+                Clock ? Before
+                --{{{  Delay by known amount
+                GUY
+                  LDC 1
+                  LDL ShiftConstant        -- Produce NumberOfTicks in Timer Reg.
+                  SHL
+                --}}}
+                Clock ? After
+                Result := After MINUS Before
+                VerifyResult (Pass, Result, NumberOfTicks)
+              --}}}
+            --}}}
+            --{{{  Check that Timeslicing occurs correctly
+            VAL INT TimeOutLoop IS #7FFF :  -- Big enough to ensure a timeslice.
+                                            -- MaxInt for 16 Bit machines.
+            INT x, y  :
+            BOOL fail :
+            SEQ
+              --{{{  Check time out does occur at low priority.
+              x, y := 0, 0
+              fail := FALSE
+              PAR
+                SEQ
+                  --{{{  Increment x in loop
+                  SEQ i = 0 FOR TimeOutLoop   -- Loop subject to timeslice.
+                    x := x + 1
+                  --}}}
+                  --{{{  Fail if y = 0
+                  IF
+                    y = 0
+                      fail := TRUE
+                    TRUE
+                      SKIP
+                  --}}}
+                SEQ
+                  --{{{  Increment y in loop
+                  SEQ i = 0 FOR TimeOutLoop   -- Loop subject to timeslice.
+                    y := y + 1
+                  --}}}
+                  --{{{  Fail if x = 0
+                  IF
+                    x = 0
+                      fail := TRUE
+                    TRUE
+                      SKIP
+                  --}}}
+              Pass := Pass AND (NOT fail)
+              --}}}
+              --{{{  Check time out does not occur at high priority.
+              INT x1, x2, otherx1, otherx2, y :
+              SEQ
+                x1, x2, y := 0, 0, 0
+                PRI PAR
+                  --{{{  Loops Should Not Time Slice
+                  SEQ
+                    PAR
+                      SEQ
+                        SEQ i = 0 FOR TimeOutLoop
+                          x1 := x1 + 1
+                        otherx1 := x2
+                      SEQ
+                        SEQ i = 0 FOR TimeOutLoop
+                          x2 := x2 + 1
+                        otherx2 := x1
+                    Pass := Pass AND (y = 0)
+                  --}}}
+                  --{{{  Loops Should Time Slice
+                  SEQ
+                    SEQ i = 0 FOR TimeOutLoop
+                      y := y + 1
+                    IF
+                      (otherx1 = 0) AND (otherx2 = TimeOutLoop) AND
+                       (x1 = TimeOutLoop) AND (x2 = TimeOutLoop)
+                        SKIP
+                      (otherx2 = 0) AND (otherx1 = TimeOutLoop) AND
+                       (x1 = TimeOutLoop) AND (x2 = TimeOutLoop)
+                        SKIP
+                      TRUE
+                        Pass := FALSE
+                  --}}}
+              --}}}
+            --}}}
+            --{{{  Clear Error
+            GUY
+              TESTERR
+            --}}}
+        --}}}
+  :
+  --}}}
+  --{{{  PROC MoveTX  (BOOL Pass)
+  PROC MoveTX (BOOL Pass)   -- 236 bytes code
+  
+    -- Full Block Move Test.
+  
+    --{{{  PROC DoMoveAndTest (Result, Source, Count)
+    PROC DoMoveAndTest ([16]BYTE Result, VAL [256]BYTE Source, VAL INT Count)
+    
+      --{{{  Comment
+      --   This Proc does a sequence of block moves of length Count, ie Count
+      -- bytes of the Source array are copied to somewhere in the Result array.
+      --   Count is controlled outside this Proc and in the course of the test
+      -- assumes all integer values from 0 to 12.
+      --   Since the first byte in the Source array, from where the move starts
+      -- copying from, and the first byte in the Result array from where the move
+      -- starts copying to, do not have to be word aligned. All possible combinations
+      -- of word aligned and non word aligned block moves are performed for the given
+      -- Count.
+      
+      --   On the tester rigs all block moves are performed and then compared
+      -- against expected results. In order to save memory space expected results
+      -- are generated and used for testing after each block move. This allows the
+      -- 16 byte result array to be used again. All possible byte combinations are
+      -- used in the Source array to detect any "stuck at" faults that might occur
+      -- in the block move logic.
+      --}}}
+    
+      VAL BYTE AllOnes IS BYTE 255 :
+      --{{{  Proc's
+      --{{{  PROC InitialiseByteArray ([]BYTE Array, VAL BYTE InitConst)
+      PROC InitialiseByteArray ([]BYTE Array, VAL BYTE InitConst)
+        SEQ i = 0 FOR (SIZE Array)
+          Array [i] := InitConst
+      :
+      --}}}
+      --{{{  PROC GenerateExpectedArray (Exp, Source, ExpOffSet, SourceOffSet, Count)
+      PROC GenerateExpectedArray ( []BYTE expected, VAL []BYTE source,
+                           VAL INT ExpectedOffSet, SourceOffSet, count)
+      
+        SEQ
+          InitialiseByteArray (expected, AllOnes)
+          SEQ i = 0 FOR count
+            expected [ExpectedOffSet + i] := source [SourceOffSet + i]
+      :
+      --}}}
+      --{{{  PROC VerifyResult (BOOL Pass, VAL []BYTE Result, Expected)
+      PROC VerifyResult (BOOL pass, VAL []BYTE result, expected)
+        -- The proc sets pass if result differs from expected.
+        IF
+          IF i = 0 FOR (SIZE result)
+            result [i] <> expected [i]
+              pass := FALSE
+          TRUE
+            SKIP
+      :
+      --}}}
+      --}}}
+      [16]BYTE Expected :   -- Used in verifying the block moves.
+      INT Index :           -- Used to index into Source Array.
+      SEQ
+        Index := 0
+        SEQ p = 0 FOR 4
+          SEQ q = 0 FOR 4
+            --{{{  Do Move  From  Word + p  To  Word + q  and Do Test
+            SEQ
+              InitialiseByteArray (Result, AllOnes)
+              [Result FROM q FOR Count] := [Source FROM (Index + p) FOR Count]
+              GenerateExpectedArray (Expected, Source, q, Index + p, Count)
+              VerifyResult (Pass, Result, Expected)
+              Index := Index + 16
+            --}}}
+    :
+    --}}}
+    --{{{  Declarations
+    [256]BYTE Source :           -- Source of Block Moves
+    [16]BYTE  Result :           -- Destination of Block Moves
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE               -- Assume Device Okay Until Fault Found.
+      SEQ i = 0 FOR 256
+        Source [i] := (BYTE i)   -- Source contains all possible bit patterns.
+      --}}}
+      SEQ i = 0 FOR 13
+        DoMoveAndTest (Result, Source, i)
+  :
+  --}}}
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass :
+  [16]BYTE message :
+  SEQ
+    --{{{  timer
+    VAL mess IS "?Timer" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      TimeTX(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  block move
+    VAL mess IS "?Block Move" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      MoveTX(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+
+--
+--  eof
+--

@@ -1,0 +1,1937 @@
+
+-- --------------------------------------------------
+--
+--    test80xa.occ  --  T8 test code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC test80xa(VAL INT boot)
+  --{{{  PROC FpDpath1   (BOOL Pass) 2556
+  PROC FpDpath1 (BOOL Pass) -- 2556/18
+  
+    --{{{  Comments on what the Sc does and test mode
+    
+    --{{{  What parts of the Fpu this Sc tests
+    --        This Sc tests the following parts of the Fpu.
+    --
+    --  (1)  The R, S and T, Arithmetic Registers. Where R is the result register,
+    --  S is the shift count register and T is the triple - 3 bits at a time
+    --  for multiply and 2 bits at a time for division.
+    --
+    --  (2)  The Exponent Constants.
+    --
+    --  (3)  The Boolean and Error Flags.
+    --
+    --  (4)  The Rounding Mode Logic.
+    --
+    --  (5)  The interrupt Save and Restore State.
+    --
+    --  (6)  The Sign Logic.
+    --
+    --  (7)  The Stack Registers.
+    --
+    --  (8)  The Length Logic.
+    --
+    --  (9)  The Conditional Logic.
+    --
+    --  (10) The Square Root logic.
+    --}}}
+    
+    --{{{  Notes on Testing Mode
+    
+    --   Through out this Sc the instructions fpldtest and fpsttest are used
+    -- frequently. In normal execution the state of parts of the Fpu are hidden,
+    -- e.g. the rounding mode, guard and sticky bits, etc. It is possible
+    -- to explicitly set some of this hidden state by using the fpldtest
+    -- likewise it is possible to determine some of the hidden state by using the
+    -- instruction fpsttest.
+    --   In order to use fpldtest the Cpu Areg must contain a pointer to an entity
+    -- of type [3]INT. The first two ints contain the usual real32 or real64
+    -- representations whilst the the third int has the ability to set some of
+    -- the above mentioned state.
+    --   Likewise fpsttest requires the Cpu Areg to contain a pointer to an entity
+    -- of type [3]INT. Again the first two ints contain the usual real32 or real64
+    -- representations whilst the third int contains information about the fpu
+    -- state. This third int is called the "TestWord" through out this program.
+    
+    --}}}
+    
+    --}}}
+  
+    --{{{  Definitions
+    --{{{  Entry Points
+    
+    --   These will be generated from the appropriate VBC file. It is envisaged
+    -- that when the development of the test software nears completion the
+    -- required entry points will be put in a library. As this will ease any
+    -- updates required by future parts having different entry points.
+    
+    --{{{  Entry Points Required By Arithmetic Registers R S T.
+    VAL INT FPUTESTLDR IS 26 :
+    VAL INT FPUTESTLDS IS 27 :
+    VAL INT FPUTESTLDT IS 28 :
+    VAL INT FPUTESTSTR IS 29 :
+    VAL INT FPUTESTSTS IS 30 :
+    VAL INT FPUTESTSTT IS 31 :
+    --}}}
+    --{{{  Entry Points Required By Exponent Constants.
+    
+    VAL INT NumberOfExponentConstantTests IS 21 :
+    
+        --   The number of Tests performed for both single and
+        -- and double length Exponent Constants.
+    
+    
+    --{{{  Entry Points
+    
+      -- There should be NumberOfExponentConstantTests of these.
+    
+    VAL INT FPUREMreturnBandZero1     IS #00000082 :
+    VAL INT FPUSQRTreturnZero         IS #00000062 :
+    VAL INT FPUCLEARBOOLEAN           IS #00000014 :
+    VAL INT FPUSETBOOLEAN             IS #00000015 :
+    VAL INT FPUADDreturnA             IS #00000064 :
+    VAL INT FPUMULreturnA             IS #000000A9 :
+    VAL INT FPUMULreturnBbiggerNANINF IS #000000A8 :
+    VAL INT FPUDIVreturnAaNbi         IS #000000BD :
+    VAL INT FPUSQRTreturnACopy        IS #000000D4 :
+    VAL INT FPUIDLEforCheckError      IS #00000083 :
+    VAL INT FPUSQRTLASTnorm1          IS #0000015D :
+    VAL INT FPUCLEARERROR             IS #0000009C :
+    VAL INT FPUORDEREDbNaN            IS #00000028 :
+    VAL INT FPUORDEREDbNaNcopy        IS #00000029 :
+    VAL INT FPUORDEREDbInfAzdn        IS #0000002A :
+    VAL INT FPUORDEREDbInfAInf        IS #00000027 :
+    VAL INT FPUORDEREDbInfANaN        IS #00000025 :
+    VAL INT FPUNANisNotNan            IS #00000017 :
+    VAL INT FPUDIVreturnAaNbzdn       IS #000000C0 :
+    VAL INT FPUSQRTreturnA            IS #000000D8 :
+    VAL INT FPUREMmoreToDoEndStep     IS #0000015B :
+    --}}}
+    
+    --{{{  ExpConEntryPoints Array
+    
+    --   This array is generated so the Exponent Constant tests can be put into
+    -- a relatively neat loop.
+    
+    VAL [NumberOfExponentConstantTests] INT ExponentConstantEntryPoints IS
+    
+              [ FPUREMreturnBandZero1, FPUSQRTreturnZero, FPUCLEARBOOLEAN,
+                FPUSETBOOLEAN, FPUADDreturnA, FPUMULreturnA,
+                FPUMULreturnBbiggerNANINF, FPUDIVreturnAaNbi,
+                FPUSQRTreturnACopy, FPUIDLEforCheckError, FPUSQRTLASTnorm1,
+                FPUCLEARERROR, FPUORDEREDbNaN, FPUORDEREDbNaNcopy,
+                FPUORDEREDbInfAzdn, FPUORDEREDbInfAInf, FPUORDEREDbInfANaN,
+                FPUNANisNotNan, FPUDIVreturnAaNbzdn, FPUSQRTreturnA,
+                FPUREMmoreToDoEndStep ] :
+    --}}}
+    --}}}
+    --{{{  Entry Point  Required Sign Bit logic.
+    VAL INT FPUADDsetZeroRM IS 97 :
+    --}}}
+    --{{{  Entry Points Required by Conditional Branch Logic Test.
+    VAL INT FPUADDsetToZeroRPRM  IS 102 :
+    VAL INT FPUADDsetToZero      IS  94 :
+    VAL INT FPUREMreturnBandZero IS 274 :
+    --}}}
+    --}}}
+    
+    --{{{  Check Patterns and Useful Constants
+    VAL [2]INT CheckPatterns IS [#55555555, #AAAAAAAA] :
+               -- These are used to check "stuck at" faults.
+    
+    VAL INT SnOne    IS #3F800000 :        --   1.0 (REAL32)
+    VAL INT DbOne    IS #3FF00000 :        --   1.0 (REAL64)   -  High Word
+    VAL INT PlusTwo  IS #40000000 :        --   2.0 (REAL32)
+    VAL INT MinusTwo IS #C0000000 :        -- - 2.0 (REAL32)
+    --}}}
+    
+    --{{{  Expected Array
+    --   This array is used in verifying computed results. Computed results are
+    -- checked against the appropriate element(s) of this array.
+    --   It contains most of the dump file used in the testing rigs.
+    VAL []INT Expected IS
+                          --{{{  Arithmetic Registers R, S and T.    0 -  23
+                          [#55555555, #55455555, #021400D5, #55555555,
+                           #00055555, #020000D5, #55555555, #00055555,
+                           #020000D5, #00000000, #55400000, #02140080,
+                           #AAAAAAAA, #AAAAAAAA, #820A00AA, #AAAAAAAA,
+                           #000AAAAA, #020000AA, #AAAAAAAA, #000AAAAA,
+                           #020000AA, #00000000, #2AA00000, #02020080,
+                          --}}}
+                          --{{{  Exponent Constants (Sn Case)       24 -  87
+                          #00000000, #03E00000, #02100080, #00000000,
+                          #00000000, #02100080, #00000000, #00200000,
+                          #02000080, #00000000, #7FE00000, #02160080,
+                          #00000000, #7FE00000, #02060080, #00000000,
+                          #00400000, #02100080, #00000000, #03E00000,
+                          #02000080, #00000000, #02000000, #02000080,
+                          #00000000, #01400000, #02100080, #00000000,
+                          #00600000, #02100080, #00000000, #09600000,
+                          #02000080, #00000000, #0FE00000, #02100080,
+                          #00000000, #0FE00000, #02000080, #00000000,
+                          #07E00000, #02100080, #00000000, #70200000,
+                          #02060080, #00000000, #09800000, #02000080,
+                          #00000000, #01800000, #02100080, #00000000,
+                          #0B200000, #02100080, #00000000, #09E00000,
+                          #02000080, #00000000, #0BE00000, #02000080,
+                          #00000000, #00200000, #02100080,
+                          --}}}
+                          --{{{  Exponent Constants (Db Case)       88 - 149
+                            -- A lot of duplication between the two
+                            -- some savings to be found here.
+                          #00000000, #03E00000, #02100080, #00000000,
+                          #00000000, #02100080, #00000000, #00200000,
+                          #02000080, #00000000, #7FE00000, #02160080,
+                          #00000000, #7FE00000, #02060080, #00000000,
+                          #00400000, #02100080, #00000000, #03E00000,
+                          #02000080, #00000000, #02000000, #02000080,
+                          #00000000, #01400000, #02100080, #00000000,
+                          #01600000, #02000080, #00000000, #43200000,
+                          #02100080, #00000000, #7FE00000, #02100080,
+                          #00000000, #7FE00000, #02000080, #00000000,
+                          #3FE00000, #02100080, #00000000, #00200000,
+                          #02060080, #00000000, #43600000, #02000080,
+                          #00000000, #03600000, #02100080, #00000000,
+                          #43200000, #02100080, #00000000, #41E00000,
+                          #02000080, #00000000, #43E00000, #02000080,
+                          #00000000, #00C00000, #02000080,
+                          --}}}
+                          --{{{  Save and Restore Constants        150 - 169
+                          #55555555, #55455555, #02140055, #55555555,
+                          #55455555, #021400D5, #55555555, #55455555,
+                          #021400D5, #00000000, #AAAAAAAA, #AAAAAAAA,
+                          #820A01AA, #AAAAAAAA, #AAAAAAAA, #820A00AA,
+                          #AAAAAAAA, #AAAAAAAA, #820A00AA, #00000001,
+                          --}}}
+                          --{{{  Stack Constants                   170 - 187
+                          #55555555, #55455555, #021400D5, #AAAAAAAA,
+                          #AAAAAAAA, #820A00AA, #55555555, #55455555,
+                          #021400D5, #AAAAAAAA, #AAAAAAAA, #820A00AA,
+                          #55555555, #55455555, #021400D5, #AAAAAAAA,
+                          #AAAAAAAA, #820A00AA,
+                          --}}}
+                          --{{{  Conditional Branch Logic          188 - 205
+                          #00000000, #BFF00000, #82100088, #00000000,
+                          #3FF00000, #02100088, #00000000, #00100000,
+                          #02100088, #00000000, #80100000, #82100088,
+                          #55555555, #55455555, #021400D5, #00000000,
+                          #80000000, #82180080,
+                          --}}}
+                          --{{{  Square Root Logic Constants       206 - 211
+                          #60000000, #07F6A09E, #02180088, #00000000,
+                          #0FF08000, #02180088] :
+                          --}}}
+    --}}}
+    --}}}
+    --{{{  Proc's and Declaration.
+    --{{{  PROC VerifyArrayResult (BOOL pass, VAL []INT result, expected)
+    PROC VerifyArrayResult (BOOL pass, VAL []INT result, expected)
+    
+      --   Some dpath1 tests are performed in "test mode", that is using fpldtest
+      -- and fpsttest. In this mode any computed results are of the types [3]INT.
+      -- This Proc tests whether the arrays result and expected are equal and sets
+      -- pass if they differ.
+    
+      IF
+        IF i = 0 FOR (SIZE result)
+          result [i] <> expected [i]
+            pass := FALSE
+        TRUE
+          SKIP
+    
+    :
+    --}}}
+    --{{{  PROC VerifySnResult    (BOOL pass, VAL INT result, expected)
+    PROC VerifySnResult (BOOL pass, VAL INT result, expected)
+    
+      -- This Proc sets Pass to False if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    
+    :
+    --}}}
+    --{{{  PROC VerifyBoolean     (BOOL pass, VAL BOOL result, expected)
+    PROC VerifyBoolean (BOOL pass, VAL BOOL result, expected)
+    
+      -- This Proc sets Pass to False if result differs from expected.
+    
+      IF
+        result = expected
+          SKIP
+        TRUE
+          pass := FALSE
+    
+    :
+    --}}}
+    [3]INT TestResult :       -- Used when storing via fpsttest.
+    [3]INT DataVector :       -- Used when loading via fpldtest.
+    INT Offset :              -- Used to index into the Expected array.
+    [2]INT DbConstantBuffer : -- Used to bring constants into workspace.
+    INT SnConstantBuffer :
+    --}}}
+    SEQ
+      --{{{  Initialisation
+      Pass := TRUE       -- Assume Device Okay Until Fault Found.
+      Offset := 0
+      SnConstantBuffer := SnOne                 -- 1.0 (REAL32)
+      DbConstantBuffer := [#00000000, DbOne]    -- 1.0 (REAL64)
+      --{{{  Step fpusave  -- Clear Error Flags and Set Rounding Mode to Nearest
+      GUY
+        LDC  556
+        --{{{  fpentry
+        PFIX #A
+        OPR  #B
+        --}}}
+      --}}}
+      --}}}
+      --{{{  The Tests
+      --{{{  Test the Arithmetic Registers R, T, And S.   Tests  1 to  8
+      SEQ i = 0 FOR (SIZE CheckPatterns)
+        --{{{  PROC SimpleTest ([3]INT result, VAL [3]INT data)
+        PROC SimpleTest ([3]INT result, VAL [3]INT data)
+        
+          --   I think this tests the fpldtest and fpsttest mechanism, before the
+          -- main tests on the R, S and T Registers. It loads data using fpldtest
+          -- and writes to result using fpsttest.
+        
+          GUY
+            LDLP  data
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            LDLP result
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+        :
+        --}}}
+        --{{{  PROC TestReg ([3]INT result, VAL [3]INT data, VAL INT LdEp, StEp)
+        PROC TestReg ([3]INT result, VAL [3]INT data, VAL INT LdEntryPoint,
+                                                              StEntryPoint)
+        
+          --   This proc loads a given register and then reads from it.
+        
+          GUY
+            --{{{  load data via fpldtest
+            LDLP  data
+            --{{{  fpldtest
+            PFIX  8
+            OPR   5
+            --}}}
+            --}}}
+            --{{{  fputestld R or T or S.
+            LDL   LdEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  fputestst R or T or S.
+            LDL   StEntryPoint
+            --{{{  fpentry
+            PFIX #A
+            OPR  #B
+            --}}}
+            --}}}
+            --{{{  store to result via fpsttest
+            LDLP result
+            --{{{  fpsttest
+            PFIX  8
+            OPR   0
+            --}}}
+            --}}}
+        :
+        --}}}
+        SEQ
+          --{{{  Assign DataVector
+          SEQ j = 0 FOR (SIZE DataVector)
+            DataVector [j] := CheckPatterns [i]
+          --}}}
+          --{{{  Simple Test
+          SimpleTest (TestResult, DataVector)
+          VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+          Offset := Offset + 3
+          --}}}
+          --{{{  Test Arithmetic Register R
+          TestReg (TestResult, DataVector, FPUTESTLDR, FPUTESTSTR)
+          VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+          Offset := Offset + 3
+          --}}}
+          --{{{  Test Arithmetic Register T
+          TestReg (TestResult, DataVector, FPUTESTLDT, FPUTESTSTT)
+          VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+          Offset := Offset + 3
+          --}}}
+          --{{{  Test Arithmetic Register S
+          TestReg (TestResult, DataVector, FPUTESTLDS, FPUTESTSTS)
+          VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+          Offset := Offset + 3
+          --}}}
+      --}}}
+      --{{{  Test the Exponent Constants.                 Tests  9 to 50
+      --{{{  PROC TestExponentConstant ([3]INT result, VAL INT entryPoint)
+      PROC TestExponentConstant ([3]INT result, VAL INT entryPoint)
+      
+        --   This Proc executes the Exponent Constant micro code for the given
+        -- entryPoint and stores the results to result via fpsttest.
+      
+        GUY
+          --{{{  Execute Exponent Constant Micro Code.
+          LDC  30
+          LDL  entryPoint
+          --{{{  fpentry2
+          PFIX #A
+          OPR   9
+          --}}}
+          --}}}
+          --{{{  Store the results via fpsttest.
+          LDLP result
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+      :
+      --}}}
+      SEQ
+        --{{{  Single Length Exponent Constants
+        --{{{  FAreg := 1.0 (REAL32)
+        GUY
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+        --}}}
+        SEQ i = 0 FOR NumberOfExponentConstantTests
+          SEQ
+            TestExponentConstant (TestResult, ExponentConstantEntryPoints [i])
+            VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+            Offset := Offset + 3
+        --}}}
+        --{{{  Double Length Exponent Constants
+        --{{{  FAreg := 1.0 (REAL64)
+        GUY
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+        --}}}
+        SEQ i = 0 FOR NumberOfExponentConstantTests
+          SEQ
+            TestExponentConstant (TestResult, ExponentConstantEntryPoints [i])
+            VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+            Offset := Offset + 3
+        --}}}
+      --}}}
+      --{{{  Test the Fpu Boolean and Fpu Error.          Tests 51 to 54
+      BOOL BoolResult :
+      SEQ
+        --{{{  Test Fpu Boolean
+        GUY
+          --{{{  Load the stack
+          LDLP  SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          LDLP  SnConstantBuffer       -- fpdup better ?
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          LDLP  SnConstantBuffer       -- Not Strictly Necessary
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpgt                    -- Clears the Boolean Flag.
+          PFIX  9
+          OPR   4
+          --}}}
+          --{{{  Store to BoolResult
+          LDLP BoolResult
+          STNL 0
+          --}}}
+        VerifyBoolean (Pass, BoolResult, FALSE)
+        GUY
+          --{{{  Load the stack
+          LDLP  SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          LDLP  SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          LDLP  SnConstantBuffer       -- Not Strictly Necessary
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpeq                    -- Sets the Boolean Flag.
+          PFIX  9
+          OPR   5
+          --}}}
+          --{{{  Store to BoolResult
+          LDLP BoolResult
+          STNL 0
+          --}}}
+        VerifyBoolean (Pass, BoolResult, TRUE)
+        --}}}
+        --{{{  Test Fpu Error
+        GUY
+          --{{{  fpuseterr           -- Sets the Error Flag.
+          LDC  35
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fptesterr           -- Tests Error Flag False and Clears.
+          PFIX  9
+          OPR  #C
+          --}}}
+          --{{{  Store to BoolResult
+          LDLP BoolResult
+          STNL 0
+          --}}}
+        VerifyBoolean (Pass, BoolResult, FALSE)
+        GUY
+          --{{{  fptesterr           -- Tests Error Flag False and Clears.
+          PFIX  9
+          OPR  #C
+          --}}}
+          --{{{  Store to BoolResult
+          LDLP BoolResult
+          STNL 0
+          --}}}
+        VerifyBoolean (Pass, BoolResult, TRUE)
+        --}}}
+      --}}}
+      --{{{  Test the Rounding Mode State.                Tests 55 to 58
+      
+      --{{{  Comment
+      
+      --   In order to determine the rounding mode state it is necessary to use
+      -- fpsttest and consider bits 7 and 8 of the TestWord.
+      --   Assuming that setting a rounding mode does not interfere with any other
+      -- state but can only malfunction in as much as setting the wrong rounding
+      -- mode. Then it is not necessary to consider all three words generated by
+      -- fpsttest but only the two bits mentioned above.
+      
+      --}}}
+      
+      --{{{  Rounding Mode definitions
+      VAL INT RoundZero     IS 0 :
+      VAL INT RoundNearest  IS 1 :
+      VAL INT RoundPositive IS 2 :
+      VAL INT RoundMinus    IS 3 :
+      --}}}
+      --{{{  Declarations
+      --{{{  INT FUNCTION DetermineRoundingMode (VAL INT TestWord)
+      INT FUNCTION DetermineRoundingMode (VAL INT TestWord)
+      
+        --   This functions isolates the two bits of TestWord relating to
+        -- RoundingMode.
+      
+        INT roundingMode :
+        VALOF
+          SEQ
+            roundingMode := TestWord
+            roundingMode := roundingMode << 23
+            roundingMode := roundingMode >> 30
+          RESULT roundingMode
+      :
+      --}}}
+      INT RoundingMode :
+      --}}}
+      SEQ
+        --{{{  Test Round Nearest  Mode
+        --{{{  Set Rounding Mode to Nearest and store using fpsttest.
+        GUY
+          --{{{  fpurn
+          LDC  34
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        RoundingMode := DetermineRoundingMode (TestResult [2])
+        VerifySnResult (Pass, RoundingMode, RoundNearest)
+        --}}}
+        --{{{  Test Round Zero     Mode
+        --{{{  Set Rounding Mode to Zero and store using fpsttest.
+        GUY
+          --{{{  fpurz
+          LDC  6
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        RoundingMode := DetermineRoundingMode (TestResult [2])
+        VerifySnResult (Pass, RoundingMode, RoundZero)
+        --}}}
+        --{{{  Test Round Positive Mode
+        --{{{  Set Rounding Mode to Positive and store using fpsttest.
+        GUY
+          --{{{  fpurp
+          LDC  4
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        RoundingMode := DetermineRoundingMode (TestResult [2])
+        VerifySnResult (Pass, RoundingMode, RoundPositive)
+        --}}}
+        --{{{  Test Round Minus    Mode
+        --{{{  Set Rounding Mode to Minus and store using fpsttest.
+        GUY
+          --{{{  fpurp
+          LDC  5
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        RoundingMode := DetermineRoundingMode (TestResult [2])
+        VerifySnResult (Pass, RoundingMode, RoundMinus)
+        --}}}
+      --}}}
+      --{{{  Test the Save and Restore Mechanism.         Tests 59 to 66
+      INT TestFpError :
+      SEQ
+        --{{{  First  Part
+        --{{{  DataVector := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        GUY
+          --{{{  Load Fpu (3 fpldtests)
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          --}}}
+          --{{{  fpuseterr
+          LDC  35
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpurz
+          LDC  6
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusave
+          LDC 44
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+        
+        --{{{  DataVector := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        GUY
+          --{{{  Load Fpu (3 fpldtests)
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          --}}}
+          --{{{  fpurestore
+          LDC 48
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+        --{{{  Test the fpurestore
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store fperror
+        GUY
+          --{{{  fptesterr
+          PFIX  9
+          OPR  #C
+          --}}}
+          LDLP TestFpError
+          STNL 0
+        --}}}
+        VerifySnResult (Pass, TestFpError, Expected [Offset])
+        Offset := Offset + 1
+        --}}}
+        --}}}
+        --{{{  Second Part
+        --{{{  DataVector := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        GUY
+          --{{{  Load Fpu (3 fpldtests)
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          --}}}
+          --{{{  fptesterr
+          PFIX  9
+          OPR  #C
+          --}}}
+          --{{{  fpurp
+          LDC  5
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusave
+          LDC 44
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+        
+        --{{{  DataVector := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        GUY
+          --{{{  Load Fpu (3 fpldtests)
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+          --}}}
+          --{{{  fpurestore
+          LDC 48
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+        --{{{  Test the fpurestore
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store to TestResult via fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        
+        --{{{  Store fperror
+        GUY
+          --{{{  fptesterr
+          PFIX  9
+          OPR  #C
+          --}}}
+          LDLP TestFpError
+          STNL 0
+        --}}}
+        VerifySnResult (Pass, TestFpError, Expected [Offset])
+        Offset := Offset + 1
+        --}}}
+        --}}}
+      --}}}
+      --{{{  Test The Fpu Sign Bit.                       Tests 67 to 72
+      
+      --{{{  Comment
+      
+      --   In order to determine the sign bit it is necessary to use fpsttest and
+      -- consider bit 31 of the TestWord.
+      --   Assuming that setting the sign bit does not interfere with any other
+      -- state but can only malfunction in as much as setting the sign bit wrong.
+      -- Then it is not necessary to consider all three words generated by fpsttest
+      -- but only the bit mentioned above.
+      
+      --}}}
+      
+      --{{{  Sign Bit Definitions
+      VAL INT SignBitNotSet IS 0 :
+      VAL INT SignBitSet    IS 1 :
+      --}}}
+      --{{{  Declarations
+      --{{{  INT FUNCTION DetermineSignBit (VAL INT TestWord)
+      INT FUNCTION DetermineSignBit (VAL INT TestWord)
+      
+        --   This functions isolates the bit of TestWord relating to the Sign Bit.
+      
+        INT signBit :
+        VALOF
+          SEQ
+            signBit := TestWord
+            signBit := signBit >> 31
+          RESULT signBit
+      :
+      --}}}
+      INT SignBit, LocalEntryPoint :
+      --}}}
+      SEQ
+        --{{{  Initialisation
+        LocalEntryPoint := FPUADDsetZeroRM
+        --}}}
+        --{{{  Part 1
+        GUY
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitSet)
+        --}}}
+        --{{{  Part 2
+        GUY
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpuabs                 -- Clear Sign Bit
+          LDC  11
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitNotSet)
+        --}}}
+        --{{{  Part 3
+        GUY
+          --{{{  FBreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpmul
+          PFIX  8
+          OPR  #B
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitNotSet)
+        --}}}
+        --{{{  Part 4
+        GUY
+          --{{{  FBreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpmul                  -- 1.0 * - 1.0
+          PFIX  8
+          OPR  #B
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitSet)
+        --}}}
+        --{{{  Part 5
+        GUY
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  FAreg := 1.0 (REAL32)  -- Push Fpu Stack
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpmul                  -- - 1.0 * 1.0
+          PFIX  8
+          OPR  #B
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitSet)
+        --}}}
+        --{{{  Part 6
+        GUY
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  FAreg := 1.0 (REAL32)  -- Push Fpu Stack
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpuaddsetzeroRM        -- Set Sign Bit
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpmul                  -- - 1.0 * - 1.0
+          PFIX  8
+          OPR  #B
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        SignBit := DetermineSignBit (TestResult [2])
+        VerifySnResult (Pass, SignBit, SignBitNotSet)
+        --}}}
+      --}}}
+      --{{{  Test the Fpu Stack.                          Tests 73 to 78
+      SEQ
+        --{{{  Push and Pop  #55555555, #AAAAAAAA, #55555555
+        --{{{  Push
+        --{{{  DataVector [i] := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        --{{{  Load DataVector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  DataVector [i] := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        --{{{  Load Data Vector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  DataVector [i] := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        --{{{  Load Data Vector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --}}}
+        --{{{  Pop
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --}}}
+        --{{{  Push and Pop  #AAAAAAAA, #55555555, #AAAAAAAA
+        --{{{  Push
+        --{{{  DataVector [i] := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        --{{{  Load DataVector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  DataVector [i] := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        --{{{  Load Data Vector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  DataVector [i] := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        --{{{  Load Data Vector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --}}}
+        --{{{  Pop
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --{{{  Store TestResult Using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --}}}
+      --}}}
+      --{{{  Test the Fpu Length Logic and State.         Tests 79 to 81
+      
+      --{{{  Comment
+      
+      --   In order to determine the length it is necessary to use fpsttest and
+      -- consider bit 19 of the TestWord.
+      --   Assuming that setting the length does not interfere with any other
+      -- state but can only malfunction in as much as setting the length wrong.
+      -- Then it is not necessary to consider all three words generated by fpsttest
+      -- but only the bit mentioned above.
+      
+      --}}}
+      
+      --{{{  Length Definitions
+      VAL INT Double IS 0 :
+      VAL INT Single IS 1 :
+      --}}}
+      --{{{  Declarations
+      --{{{  INT FUNCTION DetermineLength (VAL INT TestWord)
+      INT FUNCTION DetermineLength (VAL INT TestWord)
+      
+        --   This functions isolates the bit of TestWord relating to the Length.
+      
+        INT length :
+        VALOF
+          SEQ
+            length := TestWord
+            length := length << 12
+            length := length >> 31
+          RESULT length
+      :
+      --}}}
+      INT Length :
+      --}}}
+      SEQ
+        --{{{  Part 1
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        Length := DetermineLength (TestResult [2])
+        VerifySnResult (Pass, Length, Double)
+        --}}}
+        --{{{  Part 2
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  fpur64tor32       -- Set Length Single
+          LDC  8
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        Length := DetermineLength (TestResult [2])
+        VerifySnResult (Pass, Length, Single)
+        --}}}
+        --{{{  Part 3
+        GUY
+          --{{{  FAreg := 1.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpur32tor64       -- Set Length Single
+          LDC  7
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        Length := DetermineLength (TestResult [2])
+        VerifySnResult (Pass, Length, Double)
+        --}}}
+      --}}}
+      --{{{  Test the Conditional Branch Logic.           Tests 82 to 87
+      INT LocalEntryPoint :
+      SEQ
+        --{{{  Part 1
+        LocalEntryPoint := FPUADDsetToZeroRPRM
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  fpuaddsettozerorprm
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Part 2
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  fpurz
+          LDC  6
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpuaddsettozerorprm
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Part 3
+        LocalEntryPoint := FPUADDsetToZero
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  fpuaddsettozero
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Part 4
+        LocalEntryPoint := FPUADDsetToZero
+        GUY
+          --{{{  FAreg := 1.0 (REAL64)
+          LDLP DbConstantBuffer
+          --{{{  fpldnldb
+          PFIX  8
+          OPR  #A
+          --}}}
+          --}}}
+          --{{{  fpurm
+          LDC  5
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpuaddsettozero
+          LDL  LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Part 5 & 6
+        --{{{  DataVector [i] := #55555555
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [0]
+        --}}}
+        --{{{  Load DataVector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  DataVector [i] := #AAAAAAAA
+        SEQ i = 0 FOR 3
+          DataVector [i] := CheckPatterns [1]
+        --}}}
+        --{{{  Load DataVector Using fpldtest.
+        GUY
+          LDLP DataVector
+          --{{{  fpldtest
+          PFIX  8
+          OPR   5
+          --}}}
+        --}}}
+        --{{{  fpuremreturnbandzero and store into TestResult using fpsttest
+        LocalEntryPoint := FPUREMreturnBandZero
+        GUY
+          --{{{  fpuremreturnbandzero
+          LDL LocalEntryPoint
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        --{{{  Verify Result and Update Offset
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Store into Test Result using fpsttest
+        GUY
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+        --}}}
+        --{{{  Verify Result and Update Offset
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --}}}
+      --}}}
+      --{{{  Test the Square Root Logic                   Tests 88 to 89
+      SEQ
+        --{{{  Do Sqrt (+2.0)
+        SnConstantBuffer := PlusTwo
+        GUY
+          --{{{  FAreg := 2.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpusqrtfirst
+          LDC  1
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtlast
+          LDC  3
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+        --{{{  Do Sqrt (-2.0)
+        -- Show that Sqrt (-2.0) is ignored.
+        SnConstantBuffer := MinusTwo
+        GUY
+          --{{{  FAreg := - 2.0 (REAL32)
+          LDLP SnConstantBuffer
+          --{{{  fpldnlsn
+          PFIX  8
+          OPR  #E
+          --}}}
+          --}}}
+          --{{{  fpusqrtfirst
+          LDC  1
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtstep
+          LDC  2
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  fpusqrtlast
+          LDC  3
+          --{{{  fpentry
+          PFIX #A
+          OPR  #B
+          --}}}
+          --}}}
+          --{{{  Store into Test Result using fpsttest
+          LDLP TestResult
+          --{{{  fpsttest
+          PFIX  8
+          OPR   0
+          --}}}
+          --}}}
+        VerifyArrayResult (Pass, TestResult, [Expected FROM Offset FOR 3])
+        Offset := Offset + 3
+        --}}}
+      --}}}
+      --}}}
+  :
+  --}}}
+  --{{{  PROC Move2D     (BOOL Pass)  404 / 89
+  PROC Move2D (BOOL Pass)
+  
+    --   This checks the transparency logic in the datapath. The instructions
+    -- Move2dAll, Move2dZero and Move2dNonZero are all used.
+  
+    --{{{  PROC Do2DMoveAndTest (INT sourceOffset)
+    PROC Do2DMoveAndTest (BOOL pass, VAL INT sourceOffset)
+    
+      --{{{  Comment
+      
+      --   This tests does a series of 2D Block Moves. It copies part of a source
+      -- array to a destination array. The destination array is then compared
+      -- against an expected array.
+      
+      --   In order to fully test the transparency logic, the source array must
+      -- have zero bytes for all cases of byte boundaries and byte positions.
+      -- The variable sourceOffset in the Proc header controls the byte alignment
+      -- of the source array.
+      
+      --}}}
+    
+      --{{{  The Source, Destination and Expected Arrays.
+      
+      --   Block moves are traditionally performed on two dimensional arrays. All
+      -- arrays used in this Proc are declared or defined as one dimensional. This
+      -- is simply for convenience.
+      
+      --   The source array is four bytes larger so that all byte boundaries can
+      -- be tested.
+      
+      VAL INT SizeOfDestinationArray IS 128 :
+      
+      [SizeOfDestinationArray]BYTE DestArray, ExpectedArray :
+      
+      VAL INT SizeOfSourceArray IS SizeOfDestinationArray + 4 :
+      
+      --{{{  The Source Array
+      VAL [SizeOfSourceArray]BYTE SourceArray IS
+                  [ BYTE   0, BYTE   1, BYTE   2, BYTE   3,
+                    BYTE   4, BYTE   0, BYTE   6, BYTE   7,
+                    BYTE   8, BYTE   9, BYTE   0, BYTE  11,
+                    BYTE  12, BYTE  13, BYTE  14, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE  18, BYTE  19,
+                    BYTE   0, BYTE  21, BYTE   0, BYTE  23,
+                    BYTE   0, BYTE  25, BYTE  26, BYTE   0,
+                    BYTE  28, BYTE   0, BYTE   0, BYTE  31,
+                    BYTE  32, BYTE   0, BYTE  34, BYTE   0,
+                    BYTE  36, BYTE  37, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE  43,
+                    BYTE  44, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE  52, BYTE  53, BYTE  54, BYTE  55,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE 254, BYTE 253, BYTE 252,
+                    BYTE 251, BYTE   0, BYTE 249, BYTE 248,
+                    BYTE 247, BYTE 246, BYTE   0, BYTE 244,
+                    BYTE 243, BYTE 242, BYTE 241, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE 237, BYTE 236,
+                    BYTE   0, BYTE 234, BYTE   0, BYTE 232,
+                    BYTE   0, BYTE 230, BYTE 229, BYTE   0,
+                    BYTE 227, BYTE   0, BYTE   0, BYTE 224,
+                    BYTE 223, BYTE   0, BYTE 221, BYTE   0,
+                    BYTE 219, BYTE 218, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE 212,
+                    BYTE 211, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE 203, BYTE 202, BYTE 201, BYTE 200,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE   0, BYTE   0, BYTE   0, BYTE   0,
+                    BYTE 255, BYTE 255, BYTE 255, BYTE 255] :
+      --}}}
+      --}}}
+    
+      --{{{  2D Block Move Parameters
+      
+      --   As far as the block moves are concerned, the one dimensional arrays Source
+      -- and Dest are considered to be of the type [16][8]BYTE.
+      
+      VAL INT MoveWidth    IS 16 :   -- The number of bytes per row moved.
+      VAL INT MoveLength   IS  8 :   -- The number of rows moved.
+      VAL INT SourceStride IS 16 :   -- Number Of Bytes Per Row of Source.
+      VAL INT DestStride   IS 16 :   -- Number Of Bytes Per Row of Source.
+      --}}}
+    
+      --{{{  Declarations
+      VAL BYTE AllOnes IS (BYTE 255) : -- Used to initialise the Dest Array.
+      
+      --   The following are the six parameters required by the block move
+      -- instructions. Four of them are used to bring the above constants into
+      -- local scope.
+      
+      INT LengthOfMove, WidthOfMove :    -- In Rows and Bytes respectively.
+      
+      INT StrideOfSource, StrideOfDest : -- In Bytes.
+      
+      INT SourceAddr, DestAddr :         -- Addresses of the Source and Dest.
+      
+      --{{{  PROC VerifyResult (BOOL pass, VAL []BYTE Result, Expected)
+      PROC VerifyResult (BOOL pass, VAL []BYTE result, expected)
+      
+        -- The proc sets pass if result differs from expected.
+      
+        IF
+          IF i = 0 FOR (SIZE result)
+            result [i] <> expected [i]
+              pass := FALSE
+          TRUE
+            SKIP
+      :
+      --}}}
+      --}}}
+    
+      SEQ
+        --{{{  Initialise
+        --{{{  Determine the addresses of the Source and Dest Array.
+        GUY
+          LDLP  SourceArray
+          STL   SourceAddr
+          LDLP  DestArray
+          STL   DestAddr
+        --}}}
+        LengthOfMove   := MoveLength
+        WidthOfMove    := MoveWidth
+        StrideOfSource := SourceStride
+        StrideOfDest   := DestStride
+        SourceAddr     := SourceAddr + sourceOffset
+        --}}}
+        --{{{  Move2DAll
+        --{{{  Initialise the Destination Array.
+        SEQ i = 0 FOR (SIZE DestArray)
+          DestArray [i] := AllOnes
+        --}}}
+        --{{{  Set Expected Array
+        ExpectedArray := [SourceArray FROM sourceOffset FOR (SIZE ExpectedArray)]
+        --}}}
+        --{{{  MOVE2DALL
+        GUY
+          LDL  StrideOfSource
+          LDL  StrideOfDest
+          LDL  LengthOfMove
+          MOVE2DINIT
+        
+          LDL  SourceAddr
+          LDL  DestAddr
+          LDL  WidthOfMove
+          MOVE2DALL
+        --}}}
+        VerifyResult (pass, DestArray, ExpectedArray)
+        --}}}
+        --{{{  Move2DNonZero
+        --{{{  Initialise the Destination Array.
+        SEQ i = 0 FOR (SIZE DestArray)
+          DestArray [i] := AllOnes
+        --}}}
+        --{{{  Set Expected Array
+        SEQ i = 0 FOR (SIZE ExpectedArray)
+          IF
+            --{{{  Element is Zero, change to all ones.
+            (INT ExpectedArray [i]) = 0
+              ExpectedArray [i] := AllOnes
+            --}}}
+            --{{{  Else, Skip.
+            TRUE
+              SKIP
+            --}}}
+        --}}}
+        --{{{  MOVE2DNONZERO
+        GUY
+          LDL  StrideOfSource
+          LDL  StrideOfDest
+          LDL  LengthOfMove
+          MOVE2DINIT
+        
+          LDL  SourceAddr
+          LDL  DestAddr
+          LDL  WidthOfMove
+          MOVE2DNONZERO
+        --}}}
+        VerifyResult (pass, DestArray, ExpectedArray)
+        --}}}
+        --{{{  Move2DZero
+        --{{{  Initialise the Destination Array.
+        SEQ i = 0 FOR (SIZE DestArray)
+          DestArray [i] := AllOnes
+        --}}}
+        --{{{  Set Expected Array
+        ExpectedArray := [SourceArray FROM sourceOffset FOR (SIZE ExpectedArray)]
+        SEQ i = 0 FOR (SIZE ExpectedArray)
+          IF
+            --{{{  Element is Zero, Skip.
+            (INT ExpectedArray [i]) = 0
+              SKIP
+            --}}}
+            --{{{  Else, change to all ones.
+            TRUE
+              ExpectedArray [i] := AllOnes
+            --}}}
+        --}}}
+        --{{{  MOVE2DZERO
+        GUY
+          LDL  StrideOfSource
+          LDL  StrideOfDest
+          LDL  LengthOfMove
+          MOVE2DINIT
+        
+          LDL  SourceAddr
+          LDL  DestAddr
+          LDL  WidthOfMove
+          MOVE2DZERO
+        --}}}
+        VerifyResult (pass, DestArray, ExpectedArray)
+        --}}}
+    :
+    --}}}
+    SEQ
+      Pass := TRUE
+      SEQ SourceOffset = 0 FOR 4
+        Do2DMoveAndTest (Pass, SourceOffset)
+  :
+  --}}}
+  CHAN OF ANY OUTPUT0 :
+  PLACE OUTPUT0 AT 0 :
+  CHAN OF ANY OUTPUT1 :
+  PLACE OUTPUT1 AT 1 :
+  CHAN OF ANY OUTPUT2 :
+  PLACE OUTPUT2 AT 2 :
+  CHAN OF ANY OUTPUT3 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[boot] :
+  BOOL pass :
+  [16]BYTE message :
+  SEQ
+    --{{{  Datapath 1
+    VAL mess IS "?FP Datapath 1" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      FpDpath1(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    --{{{  Move2D
+    VAL mess IS "?2D block move" :
+    SEQ
+      [message FROM 0 FOR SIZE mess] := mess
+      Move2D(pass)
+      IF
+        pass
+          message[0] := ' '
+        TRUE
+          SKIP
+      out ! (INT16 (SIZE mess))::message
+    --}}}
+    out ! 1(INT16)::"."
+    GUY
+      OPR $1FF
+:
+
+
+--
+--  eof
+--

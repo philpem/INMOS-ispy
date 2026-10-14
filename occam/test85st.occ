@@ -1,0 +1,357 @@
+-- Derived from recovered INMOS FTEST; later-revision address map.
+#INCLUDE "u805.occ"
+PROC test85st(VAL INT bootchan)
+  PROC StackT801a (BOOL Pass)
+  
+    -- This checks the drivers connected to the stack and sets pass accordingly.
+  
+    --{{{  Definitions and Declarations
+    VAL []INT TestArray IS [#2AAAAAAA, #55555555, #AAAAAAAB,
+                                       #AAAAAAAA, #80000000 ] :
+      --   The elements of this array are used in testing computed results
+      -- against expected results.
+    
+    INT Result :
+      -- This is used to compare a computed result against an expected value.
+    --}}}
+    --{{{  PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    PROC VerifyResult (BOOL pass, INT result, VAL INT Expected)
+    
+      -- Every stack test requires a computed result to be tested against a known
+      -- or expected value. This proc performs the testing.
+      -- The proc sets pass if result differs from Expected.
+      IF
+        result = Expected
+          SKIP
+        TRUE
+          pass := FALSE
+    :
+    --}}}
+    SEQ
+      --{{{  Initialise
+      Pass := TRUE                   -- Assume part okay until fault found.
+      Result := #EEEEEEEE            -- Any value not occurring in TestArray.
+      --}}}
+      --{{{  ShiftRightAreg
+      GUY     --    check even bits
+        LDC   #55555555         -- load Areg
+        STEP PROD               -- Areg := Areg >> 1
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY     -- check odd bits
+        LDC   #AAAAAAAA         -- load Areg
+        STEP PROD               -- Areg := Areg >> 1
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [1])
+      --}}}
+      --{{{  ShiftRightBreg
+      GUY     -- check even bits
+        LDC   #55555555         -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step WCNTshiftPos  -- Breg := Breg >> 1
+        OPR u.wcntshiftpos
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY     -- check odd bits
+        LDC   #AAAAAAAA         -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step WCNTshiftPos  -- Breg := Breg >> 1
+        OPR u.wcntshiftpos
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [1])
+      --}}}
+      --{{{  BregShIn0From1
+      GUY
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step DIVlastBit1   -- Breg := (Breg << 1) + 1
+        OPR u.divlastbit1
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, 1)
+      --}}}
+      --{{{  ShiftLeftBreg
+      GUY     -- check even bits
+        LDC   #55555555         -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step DIVlastBit1   -- Breg := (Breg << 1) + 1
+        OPR u.divlastbit1
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [2])
+      
+      GUY     -- check odd bits
+        LDC   #AAAAAAAA         -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step DIVlastBit1   -- Breg := (Breg << 1) + 1
+        OPR u.divlastbit1
+        --}}}
+        LDC   0                 -- clear Oreg and push stack
+        STL   Result            -- pop off Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [1])
+      --}}}
+      --{{{  ShiftLeftCreg   (YbusFromCregSL1)
+      GUY     -- check even bits; shift in 0 to Creg[0]
+        LDC   #55555555         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Creg := (Creg << 1) + Breg [31]
+        OPR u.normbitshloop
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [3])
+      
+      GUY     -- check even bits; shift in 1 to Creg[0]
+        LDC   #55555555         -- load Creg
+        MINT                    -- load Breg = #8000
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Creg := (Creg << 1) + Breg [31]
+        OPR u.normbitshloop
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [2])
+      
+      GUY     -- check odd bits; shift in 0 to Creg[0]
+        LDC   #AAAAAAAA         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Creg := (Creg << 1) + Breg [31]
+        OPR u.normbitshloop
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, #55555554)
+      
+      GUY     -- check odd bits; shift in 1 to Creg[0]
+        LDC   #AAAAAAAA         -- load Creg
+        MINT                    -- load Breg = #8000
+        LDC   0                 -- load Areg
+        --{{{  Step NORMbitShLoop -- Creg := (Creg << 1) + Breg [31]
+        OPR u.normbitshloop
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [1])
+      --}}}
+      --{{{  ShiftRightCreg  (CregFromZbusSR1)
+      GUY     -- check even bits; shift in 0 to Creg[Msb]
+        LDC   #55555555          -- load Creg
+        LDC   0                  -- load Breg
+        LDC   0                  -- load Areg
+        --{{{  Step NORMcountShift -- Creg := (Creg >> 1) + Cout << 31
+        OPR u.normcountshift
+        --}}}
+        ADC   1                  -- clear Oreg
+        STL   Result             -- pop off Areg
+        STL   Result             -- pop off Breg
+        STL   Result             -- store result of shift
+      VerifyResult (Pass, Result, TestArray [0])
+      
+      GUY     -- check even bits; shift in 1 to Creg[Msb]
+        LDC   #55555555          -- load Creg
+        LDC   0                  -- load Breg
+        LDC   0                  -- load Areg
+        --{{{  Step NORMbitShEnd   -- Creg := (Creg >> 1) + 1
+        OPR u.normbitshend
+        --}}}
+        ADC   1                  -- clear Oreg
+        STL   Result             -- pop off Areg
+        STL   Result             -- pop off Breg
+        STL   Result             -- store result of shift
+      VerifyResult (Pass, Result, TestArray [3])
+      
+      GUY     -- check odd bits; shift in 0 to Creg[Msb]
+        LDC   #AAAAAAAA          -- load Creg
+        LDC   0                  -- load Breg
+        LDC   0                  -- load Areg
+        --{{{  Step NORMcountShift -- Creg := (Creg >> 1) + Cout << 31
+        OPR u.normcountshift
+        --}}}
+        ADC   1                  -- clear Oreg
+        STL   Result             -- pop off Areg
+        STL   Result             -- pop off Breg
+        STL   Result             -- store result of shift
+      VerifyResult (Pass, Result, TestArray [1])
+      
+      GUY     -- check odd bits; shift in 1 to Creg[Msb]
+        LDC   #AAAAAAAA          -- load Creg
+        LDC   0                  -- load Breg
+        LDC   0                  -- load Areg
+        --{{{  Step NORMbitShEnd   -- Creg := (Creg >> 1) + 1
+        OPR u.normbitshend
+        --}}}
+        ADC   1                  -- clear Oreg
+        STL   Result             -- pop off Areg
+        STL   Result             -- pop off Breg
+        STL   Result             -- store result of shift
+      VerifyResult (Pass, Result, #D5555555)
+      --}}}
+      --{{{  CregFrom0
+      GUY
+        LDC   #FFFFFFFF         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        STEP SB                 -- Creg := 0
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result
+      VerifyResult (Pass, Result, 0)
+      --}}}
+      --{{{  CregShInMsbFromCarryOut
+      GUY     -- force NOT CarryOut
+        LDC   #FFFFFFFF         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        -- perform Areg + Creg in alu to give no CarryOut
+        --{{{  Step LMULshiftAdd  -- Creg := (Creg >> 1) + COut << 31
+        OPR u.lmulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, #7FFFFFFF)
+      
+      GUY     -- force CarryOut
+        LDC   #FFFFFFFF         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   1                 -- load Areg
+        -- perform Areg + Creg in alu to give CarryOut
+        --{{{  Step LMULshiftAdd  -- Creg := (Creg >> 1) + COut << 31
+        OPR u.lmulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [4])
+      --}}}
+      --{{{  CregShInMsbFromArithLogic
+      --{{{  Comment
+      -- multiply and add (MULshiftAdd) step shifts Creg right 1 place, and
+      -- sign extends into Creg[msb] if there is no overflow from Areg + Creg,
+      -- but sets NOT Zbus[msb] into Creg[msb] if there is an overflow from
+      -- Areg + Creg.
+      --}}}
+      GUY     -- force no overflow, set Creg[msb] to 0 (from 0)
+        LDC   #F                -- load Creg
+        LDC   0                 -- load Breg
+        LDC   0                 -- load Areg
+        -- perform Areg + Creg in alu to give no Overflow
+        --{{{  Step MULshiftAdd   -- Creg := ( (Cr + Ar) >> 1) + AL << 31
+        OPR u.mulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, 7)
+      
+      GUY     -- force no overflow, set Creg[msb] to 1 (from 1)
+        LDC   #FFFFFFFF         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   #FFFFFFFF         -- load Areg
+        -- perform Areg + Creg in alu to give no Overflow
+        --{{{  Step MULshiftAdd   -- Creg := ( (Cr + Ar) >> 1) + AL << 31
+        OPR u.mulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, #FFFFFFFF)
+      
+      GUY     -- force overflow, set Creg[msb] to 0 (from 1)
+        MINT                    -- load Creg = #8000
+        LDC   0                 -- load Breg
+        MINT                    -- load Areg = #8000
+        -- perform Areg + Creg in alu to give Overflow
+        --{{{  Step MULshiftAdd   -- Creg := ( (Cr + Ar) >> 1) + AL << 31
+        OPR u.mulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result            -- store result of shift
+      VerifyResult (Pass, Result, TestArray [4])
+      
+      GUY     -- force overflow, set Creg[msb] to 1 (from 0)
+        LDC   #55555555         -- load Creg
+        LDC   0                 -- load Breg
+        LDC   #7FFFFFFF         -- load Areg
+        -- perform Areg + Creg in alu to give Overflow
+        --{{{  Step MULshiftAdd   -- Creg := ( (Cr + Ar) >> 1) + AL << 31
+        OPR u.mulshiftadd
+        --}}}
+        ADC   1                 -- clear Oreg
+        STL   Result            -- pop off Areg
+        STL   Result            -- pop off Breg
+        STL   Result             -- store result of shift
+      VerifyResult (Pass, Result, #6AAAAAAA)
+      --}}}
+      --{{{  Clear Error
+      GUY
+        TESTERR
+      --}}}
+  :
+  --}}}
+  --{{{  PROC ConstT801a (BOOL Pass)
+  CHAN OF ANY OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3 :
+  PLACE OUTPUT0 AT 0 :
+  PLACE OUTPUT1 AT 1 :
+  PLACE OUTPUT2 AT 2 :
+  PLACE OUTPUT3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [OUTPUT0, OUTPUT1, OUTPUT2, OUTPUT3] :
+  CHAN OF INT16::[]BYTE out IS OUTPUT[bootchan] :
+  VAL mess IS "?Stack drivers" :
+  VAL marker IS ":BEGIN Stack drivers" :
+  VAL done IS "." :
+  [SIZE mess]BYTE message :
+  BOOL pass :
+  SEQ
+    out ! (INT16 (SIZE marker))::marker
+    message := mess
+    StackT801a(pass)
+    IF
+      pass
+        message[0] := ' '
+      TRUE
+        SKIP
+    out ! (INT16 (SIZE mess))::message
+    out ! (INT16 (SIZE done))::done
+    GUY
+      OPR #1FF
+:
