@@ -36,14 +36,13 @@
 #define TIMEOUT 40
 #define SEGSIZE 511
 #define MAXINT	((unsigned)-1)
-#define EMPTY ' '
 
 #define SWITCHAR '-'
 
 static char    *TPIDS[] = {"???", "?1/2?", "DISK", "HOST", "T???",
 	 "?T16", "?T32", "T16", "T32", "C004", "M212", "T2", "T414", "T800",
 			   "T425", "T805", "T801", "", "T225", "T400"};
-static char	LETTER[32] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+static char	LETTER[33] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
 /*}}}  */
 /*{{{  externs */
 extern char *PROGRAM_NAME;
@@ -273,6 +272,74 @@ int		readtp(char *tputer)
 }
 /*}}}  */
 /*{{{  int	       lex(....) */
+/* A C004 map stores input selections indexed by output. Long-form templates
+ * use INPUT>OUTPUT, as documented; '-' sets both directions. */
+static int c004port(char **cursor, int id)
+{
+    char *end;
+    long port;
+    while (isspace((unsigned char)**cursor)) (*cursor)++;
+    if (!isdigit((unsigned char)**cursor))
+        AbortExit("lex", "C004 %d: expected port number", id);
+    port = strtol(*cursor, &end, 10);
+    if (port < 0 || port >= C004_PORTS)
+        AbortExit("lex", "C004 %d: link number out of range", id);
+    *cursor = end;
+    return (int)port;
+}
+
+static void c004selection(struct c4stats *q, int output, int input)
+{
+    if (q->config[output] != C004_EMPTY)
+        AbortExit("lex", "C004 %d: link %d connected twice", q->tpid, output);
+    q->config[output] = (signed char)input;
+}
+
+static void parsec004(struct c4stats *q, char *cursor)
+{
+    int output = 0;
+    char bracket;
+    while (*cursor && *cursor != '[' && *cursor != '(') cursor++;
+    bracket = *cursor++;
+    if (bracket != '[' && bracket != '(')
+        AbortExit("lex", "C004 %d: missing configuration", q->tpid);
+    for (;;) {
+        while (isspace((unsigned char)*cursor)) cursor++;
+        if (*cursor == (bracket == '[' ? ']' : ')')) return;
+        if (!*cursor)
+            AbortExit("lex", "C004 %d: unterminated configuration", q->tpid);
+        if (bracket == '[') {
+            int input;
+            if (output >= C004_PORTS)
+                AbortExit("lex", "C004 %d: too many ports", q->tpid);
+            if (*cursor == '-') {
+                cursor++;
+                output++;
+                continue;
+            }
+            for (input = 0; input < C004_PORTS && LETTER[input] != *cursor; input++);
+            if (input == C004_PORTS)
+                AbortExit("lex", "C004 %d: invalid port character", q->tpid);
+            q->config[output++] = (signed char)input;
+            cursor++;
+        } else {
+            int first = c004port(&cursor, q->tpid), second;
+            char delimiter;
+            while (isspace((unsigned char)*cursor)) cursor++;
+            delimiter = *cursor;
+            if (delimiter != '-' && delimiter != '>')
+                AbortExit("lex", "C004 %d: expected '-' or '>'", q->tpid);
+            cursor++;
+            second = c004port(&cursor, q->tpid);
+            c004selection(q, second, first);
+            if (delimiter == '-' && first != second)
+                c004selection(q, first, second);
+            if (*cursor && !isspace((unsigned char)*cursor) && *cursor != ')')
+                AbortExit("lex", "C004 %d: invalid connection", q->tpid);
+        }
+    }
+}
+
 int		lex(FILE * stream, struct tpstats ** root,
 				    char *Pipe, char *LinkName, char *Banner)
 {
@@ -306,7 +373,7 @@ int		lex(FILE * stream, struct tpstats ** root,
 	    char	    bootspeed[6];
 	    char	    tputer[6];
 	    char	    linkinfo[4][10];
-	    char	    delimiter, c;
+	    char	    c;
 	    i = sscanf(line, "%d %5c-%2d %s %d [ %s %s %s %s ]",
 		       &tpid, tputer, &procspeed,
 		       bootspeed, &bootlink,
@@ -340,111 +407,44 @@ int		lex(FILE * stream, struct tpstats ** root,
 			curr->linkno[i] = TXXX;
 		    else
 		    {
-			int		tpno;
-			if (sscanf(linkinfo[i], "%d:%c", &tpno, &c) == 2)
-			{
-			    curr->tpno[i] = tpno;
-			    if (c == 'C')
-				curr->linkno[i] = C4;
-			    else
-				curr->linkno[i] = c - '0';
-			    curr->links[i] = curr;	/* for benefit of C004 */
-			} else
-			{
-			    curr->linkno[i] = readtp(linkinfo[i]);
-			    curr->links[i] = NULL;	/* for benefit of C004 */
-			}
+				int		tpno;
+				if (sscanf(linkinfo[i], "%d:%c", &tpno, &c) == 2)
+				{
+					curr->tpno[i] = tpno;
+					if (c == 'C')
+					curr->linkno[i] = C4;
+					else
+					curr->linkno[i] = c - '0';
+					curr->links[i] = curr;	/* for benefit of C004 */
+				} else
+				{
+					curr->linkno[i] = readtp(linkinfo[i]);
+					curr->links[i] = NULL;	/* for benefit of C004 */
+				}
 		    }
 		}
 	    } else if (i > 0)
 	    {
 		struct c4stats *q;
-		int		from = 0, to;
-		char		bracket, *c;
-		i = sscanf(line, "%d %s", &tpid, tputer);
-		if ((i == 2) && (tputer[0] == 'C'))
-		{
-		    q = (struct c4stats *) Malloc(sizeof(struct c4stats));
-		    if (curr != NULL)
-			curr->next = (struct tpstats *) q;
-		    else
-			*root = (struct tpstats *) q;
-		    curr = curr->next;
-		    strcpy(q->info, line);
-		    q->next = NULL;
-		    q->extra = NULL;
-		    q->parent = NULL;
-		    q->routelen = -1;
-		    q->tpid = tpid;
-		    q->tptype = readtp(tputer);
-		    if (class(q->tptype) != C4)
-			AbortExit("lex", "%s ???", line);
-		    strcpy(q->config, "				       ");
-		    for (i = 0; (line[i] != '[') && (line[i] != '(') && line[i]; i++);
-		    bracket = line[i++];
-		    switch (bracket)
-		    {
-			case '[':
-			    for (to = 0; (line[i] != 0) && (line[i] != ']'); i++)
-				switch (line[i])
-				{
-				    case '-':
-					to++;
-				    case ' ':
-					break;
-				    default:
-					for (from = 0; LETTER[from] != line[i]; from++);
-					q->config[to] = (char) from;
-					to++;
-					break;
-				}
-			    break;
-			case '(':
-			    c = &line[i];
-			    while (*c!=')' && (*c))
-			    {
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				if (*c)
-				    from = atoi(c);
-				while (*c && (*c!='-') && (*c!='>'))
-				    c++;
-				delimiter = *c;
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				if (*c)
-				    to = atoi(c);
-				while (*c && (*c>='0') && (*c<='9'))
-				    c++;
-				if (!*c)
-				    continue;
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				switch (delimiter)
-				{
-				    case '-':
-					if (q->config[from] == EMPTY)
-					    q->config[from] = (char) to;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
-						      tpid, from, to, q->config[from]);
-					if ((q->config[to] == EMPTY) || (to == from))
-					    q->config[to] = (char) from;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
-						      tpid, to, from, q->config[to]);
-					break;
-				    case '>':
-					if (q->config[from] == EMPTY)
-					    q->config[from] = (char) to;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected twice",
-						      tpid, from);
-					break;
-				}
-			    }
-		    }
-		}
+        i = sscanf(line, "%d %5s", &tpid, tputer);
+        if ((i == 2) && (tputer[0] == 'C'))
+        {
+            q = (struct c4stats *) Malloc(sizeof(struct c4stats));
+            if (curr != NULL)
+                curr->next = (struct tpstats *) q;
+            else
+                *root = (struct tpstats *) q;
+            curr = (struct tpstats *) q;
+            strcpy(q->info, line);
+            q->routelen = -1;
+            q->tpid = tpid;
+            q->tptype = readtp(tputer);
+            if (class(q->tptype) != C4)
+                AbortExit("lex", "%s ???", line);
+            for (i = 0; i < C004_PORTS; i++)
+                q->config[i] = C004_EMPTY;
+            parsec004(q, line);
+        }
 	    } else
 		fprintf(stderr, "%s ???\n", line);
 	}
@@ -570,70 +570,55 @@ int		writeup(struct tpstats * p, int c4read, int comment)
 /*{{{  void	       writeC4(struct c4stats * q) */
 void		writeC4(struct c4stats * q)
 {
-    char	    inputs[32];
     int		    i, error = FALSE;
-    for (i = 0; i < 32; i++)
-	inputs[i] = EMPTY;
-    for (i = 0; i < 32; i++)
-	if (q->config[i] != EMPTY)
-	{
-	    int		    j;
-	    j = q->config[i];
-	    if (inputs[j] != EMPTY)
-		error = TRUE;
-	}
     printf("%4d %-5s   [", q->tpid, tptostr(q->tptype));
-    for (i = 0; i < 32; i++)
+    for (i = 0; i < C004_PORTS; i++)
     {
-	if (!(i % 8))
-	    putchar(' ');
-	if (q->config[i] == EMPTY)
-	    putchar('-');
-	else
-	    putchar(q->config[i]);
+		int		input = q->config[i];
+		if (!(i % 8))
+			putchar(' ');
+		if (input == C004_EMPTY)
+			putchar('-');
+		else
+			if ((input >= 0) && (input < C004_PORTS))
+				putchar(LETTER[input]);
+			else
+			{
+				putchar('?');
+				error = TRUE;
+			}
     }
 
     if (error)
-	printf(" ]?");
+		printf(" ]?");
     else
-	printf(" ]");
+		printf(" ]");
 }
 /*}}}  */
 /*{{{  void	       writeCl(struct c4stats * q) */
 void		writeCl(struct c4stats * q)
 {
-    char	    inputs[32];
-    int		    i, error = FALSE;
-    for (i = 0; i < 32; i++)
-	inputs[i] = EMPTY;
-    for (i = 0; i < 32; i++)
-	if (q->config[i] != EMPTY)
-	{
-	    int		    j;
-	    j = q->config[i];
-	    if (inputs[j] != EMPTY)
-		error = TRUE;
-	}
+    int		    i;
     printf("%4d %-5s (", q->tpid, tptostr(q->tptype));
-    for (i = 0; i < 32; i++)
+    for (i = 0; i < C004_PORTS; i++)
     {
-	int		j;
-	if (q->config[i] != EMPTY)
-	{
-	    j = q->config[i];
-	    if (q->config[j] == (char) i)
-	    {
-		if (j >= i)
-		    printf("%d-%d ", i, j);
-	    } else
-		printf("%d>%d ", i, j);
-	}
+		int		j = q->config[i];
+		if (j == C004_EMPTY)
+			continue;
+		if ((j < 0) || (j >= C004_PORTS))
+		{
+			printf("%d>? ", i);
+			continue;
+		}
+		if (q->config[j] == (signed char) i)
+		{
+			if (j >= i)
+				printf("%d-%d ", i, j);
+		} else
+			printf("%d>%d ", j, i);
     }
 
-    if (error)
-	printf(")?");
-    else
-	printf(")");
+    printf(")");
 }
 /*}}}  */
 
@@ -648,84 +633,90 @@ void		writeCl(struct c4stats * q)
 int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 	unsigned int bytes_to_go = maxlength;
 	unsigned char *read_point = string;
-	int bytesread = 0;
 	int count = 10;
 
 	while ((bytes_to_go > 0) && (count > 0)) {
-		bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
+		int bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
 		DEBUG((stderr, "readbytes(bytesread = %d)", bytesread));
-		bytes_to_go -= bytesread;
-		read_point += bytesread;
-		count--;
-	}
 
-	if (bytesread < 0) {
-		fprintf(stderr, "Read from link failed - result = %i\n", bytesread);
-		bytesread = 0;
-	} else {
-		if (count == 0) {
-			fprintf(stderr, "Read from link failed (Timeout)\n");
-		} else {
-			bytesread = maxlength - bytes_to_go;
+		if (bytesread < 0) {
+			fprintf(stderr, "Read from link failed - result = %i\n", bytesread);
+			return (0);
 		}
+		if (bytesread == 0) {
+			count--;
+			continue;
+		}
+
+		read_point += bytesread;
+		bytes_to_go -= (unsigned int) bytesread;
+		count = 10; /* Only consecutive empty reads count as a timeout. */
 	}
 
-	DEBUG((stderr, "readbytes(bytesread = %d)", bytesread));
+	if (bytes_to_go != 0) {
+		fprintf(stderr, "Read from link failed (Timeout)\n");
+		return (0);
+	}
+
+	DEBUG((stderr, "readbytes(bytesread = %d)", maxlength));
 	if (CocoPops) {
-		int i;
+		unsigned int i;
 		fputs("(", stderr);
-		for (i = 0; i < bytesread; i++) {
-			fprintf (stderr, "%0X ", (int) *(string + i) );
+		for (i = 0; i < maxlength; i++) {
+			fprintf (stderr, "%0X ", (unsigned int) *(string + i) );
 		}
 		fputs(")", stderr);
 		fputc('\n', stderr);
 		fflush(stderr);
 	}
 
-	return (bytesread);
+	return ((int) maxlength);
 }
 
 int getiserver(LINK TheLink, unsigned int *length, unsigned char *string, unsigned int maxlength){
-	if (readbytes(TheLink, string, 2) == 2){
-		*length = (string[1] << 8) + string[0];
-		if ((*length <= maxlength) && (length) && (readbytes(TheLink, string, *length) == *length)) {
-			return (TRUE);
-		} else {
-			if (length) {
-				return (FALSE);
-			} else {
-				/* length of zero */
-				return (TRUE);
-			}
-		}
-	} else {
+	unsigned char header[2];
+
+	if (readbytes(TheLink, header, 2) != 2) {
 		return (FALSE);
 	}
+
+	*length = ((unsigned int) header[1] << 8) | (unsigned int) header[0];
+
+	if (*length > maxlength) {
+		fprintf(stderr, "getiserver: packet of %u bytes exceeds buffer of %u\n",
+			*length, maxlength);
+		return (FALSE);
+	}
+
+	if (*length == 0) {
+		return (TRUE);
+	}
+
+	return (readbytes(TheLink, string, *length) == (int) *length);
+}
+
+static int writebytes(LINK TheLink, unsigned int length, unsigned char *buffer)
+{
+	unsigned int done = 0;
+	while (done < length) {
+		int written = WriteLink(TheLink, &buffer[done], length - done, TIMEOUT);
+		if (written <= 0) return FALSE;
+		done += (unsigned int)written;
+	}
+	return TRUE;
 }
 
 int sendiserver(LINK TheLink, unsigned int length, unsigned char *buffer) {
 	unsigned char   int16[2];
-	
+
 	int16[0] = (unsigned char) (length & 0xFF);
 	int16[1] = (unsigned char) (length >> 8);
-	
-	if ((WriteLink(TheLink, int16, 2, TIMEOUT) == 2) && length) {
-		unsigned int start=0, written=0; /* , writing=64;  */
-		do {
-			/* if ((length-written) < writing)
-			writing = length-written; */
-			start += written;
-			written = WriteLink(TheLink, &buffer[start], (length-written), TIMEOUT);
-		} while (written && ((start+written) < length));
-		
-		if ((start+written) == length) {
-			return (TRUE);
-		} else {
-			return (FALSE);
-		}
-	} else {
+
+	if (!writebytes(TheLink, 2, int16)) {
 		return (FALSE);
 	}
+
+	return writebytes(TheLink, length, buffer);
 }
 
 void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
@@ -746,6 +737,7 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 		}
 		
 		if ((i != 0) || (q->parent != NULL)) {
+			free(route);
 			AbortExit("loader", "Error finding route thread, processor %d", p->tpid);
 		}
 		if ((WriteLink(TheLink, ROUTE, sizeof(ROUTE), TIMEOUT) == sizeof(ROUTE)) && sendiserver(TheLink, (p->routelen) + 1, route)) {
@@ -763,9 +755,8 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 				//	}
 				//}
 			}
-		
-			free(route);
 		}
+		free(route);
 	}
 }
 

@@ -1,0 +1,278 @@
+-- Recovered from the historical check16b.occ monitor, adapted to the
+-- current ISPY bootstrap/router protocol. Original source:
+-- https://wotug.org/parallel/vendors/inmos/archive-server/checkocc/check16b.occ
+-- The host reads 32 output selections, resets, and probes A/B behaviour.
+-- Compile with /U, matching the released monitor's unchecked code generation.
+
+-- --------------------------------------------------
+--
+--    c00416.occ  --  16bit c004 query code, router
+--
+-- --------------------------------------------------
+
+#INCLUDE "checklib.occ"
+VAL size.segment IS 34 :
+PROC c00416(VAL INT bootchan)
+  --{{{  hard CHANs, INPUT and OUTPUT
+  -- Place individual channel words; placed arrays contain pointers,
+  -- and must not overlay the hardware link registers.
+  CHAN OF ANY link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [link.out.0, link.out.1,
+                            link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [link.in.0, link.in.1,
+                           link.in.2, link.in.3] :
+  CHAN OF ANY COMMAND IS INPUT[bootchan] :
+  --}}}
+  CHAN OF ANY to.application :
+  CHAN OF INT pause :
+  PAR
+    --{{{  router
+    --{{{  VALs
+    VAL passing IS 0(BYTE):
+    VAL booting IS 1(BYTE):
+    VAL special IS 1(BYTE):
+    --}}}
+    --{{{  PROC pass.packet, expects length to have been input
+    PROC pass.packet(CHAN OF ANY input, output, INT length, VAL BYTE status)
+      [size.segment]BYTE buffer :
+      SEQ
+        IF
+          status = booting
+            SKIP
+          TRUE
+            output ! (INT16 length)
+        WHILE length > 0
+          IF
+            --{{{  block too big
+            length > size.segment
+              SEQ
+                input ? buffer
+                output ! buffer
+                length := length - size.segment
+            --}}}
+            --{{{  block fits
+            TRUE
+              SEQ
+                input ? [buffer FROM 0 FOR length]
+                output ! [buffer FROM 0 FOR length]
+                length := 0
+            --}}}
+    :
+    --}}}
+    INT16 myid :
+    SEQ
+      COMMAND ? myid; myid  -- ISERVER protocol
+      PAR
+        --{{{  stuff from root
+        --{{{  DECLs
+        [4]BYTE tag :  -- 0 is scratch, 1 is mode, 2 is path, 3 is special
+        INT16 len :
+        INT length :
+        --}}}
+        SEQ
+          tag[1] := passing
+          WHILE TRUE
+            CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+            SEQ
+              COMMAND ? len
+              length := (INT len)
+              IF
+                --{{{  escape
+                length = (INT ESCAPE)
+                  SEQ
+                    COMMAND ? tag[0]
+                    IF
+                      --{{{  setpath
+                      tag[0] = TAG.SETPATH
+                        SEQ
+                          COMMAND ? len; tag[2]
+                          length := (INT len)-1
+                          tag[1] := passing
+                          IF
+                            --{{{  length = 0
+                            length = 0
+                              IF
+                                tag[2] = TAG.HALT
+                                  --{{{  stop
+                                  SEQ
+                                    SEQ i = 1 FOR 3
+                                      VAL thischan IS (i+bootchan)\4 :
+                                      CHAN OF ANY inchan  IS INPUT[thischan] :
+                                      CHAN OF ANY outchan IS OUTPUT[thischan] :
+                                      SEQ
+                                        ASM
+                                          LDL inchan
+                                          RESETCH
+                                          LDL outchan
+                                          RESETCH
+                                    ASM
+                                      OPR #1FF -- reboot
+                                  --}}}
+                                TRUE
+                                  tag[3] := special
+                            --}}}
+                            --{{{  otherwise
+                            TRUE
+                              CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+                              SEQ
+                                tag[3] := 0(BYTE) -- non-special
+                                NEXT ! ESCAPE; TAG.SETPATH
+                                pass.packet(COMMAND, NEXT, length, passing)
+                            --}}}
+                      --}}}
+                      --{{{  I'm not special, following IFs are special
+                      tag[3] <> special
+                        NEXT ! ESCAPE; tag[0]
+                      --}}}
+                      --{{{  boot
+                      tag[0] = TAG.BOOT
+                        tag[1] := booting  -- set boot mode
+                      --}}}
+                      --{{{  lspeed
+                      tag[0] = TAG.LSPEED
+                        [257]BYTE buffer :
+                        PLACE buffer AT 0 :
+                        NEXT ! buffer
+                      --}}}
+                --}}}
+                TRUE
+                  IF
+                    tag[2] = 4(BYTE)
+                      pass.packet(COMMAND, to.application, length, tag[1])
+                    TRUE
+                      pass.packet(COMMAND, NEXT, length, tag[1])
+        --}}}
+        --{{{  return
+        [4]BOOL c004 :
+        SEQ
+          c004 := [FALSE, FALSE, FALSE, FALSE]
+          WHILE TRUE
+            INT16 len :
+            INT length :
+            INT chan :
+            SEQ
+              ALT
+                pause ? chan
+                  SEQ
+                    c004[chan] := TRUE
+                    pause ? chan
+                ALT i = 1 FOR 3
+                  VAL thischan IS (i+bootchan)\4 :
+                  [32]BYTE buffer :
+                  (c004[thischan]) & INPUT[thischan] ? buffer
+                    OUTPUT[bootchan] ! 32(INT16)::buffer
+                ALT i = 1 FOR 3
+                  VAL thischan IS (i+bootchan)\4 :
+                  VAL special.len1 IS $B117(INT16) :
+                  VAL special.len2 IS $8908(INT16) :
+                  (NOT c004[thischan]) & INPUT[thischan] ? len
+                    SEQ
+                      length := (INT len)
+                      IF
+                        --{{{  we are receiving a bootstrap
+                        (length = (INT special.len1)) OR (length = (INT special.len2))
+                          SEQ
+                            --{{{  which bootstrap ?
+                            IF
+                              length = (INT special.len2)
+                                length := 22+9
+                              TRUE
+                                length := 22
+                            --}}}
+                            --{{{  swallow bootstrap
+                            SEQ i = 0 FOR length
+                              [4]BYTE trash :
+                              INPUT[thischan] ? trash[0]
+                            --}}}
+                            OUTPUT[thischan] ! myid; (BYTE thischan)
+                        --}}}
+                        TRUE
+                          pass.packet(INPUT[thischan],
+                                      OUTPUT[bootchan], length, passing)
+        --}}}
+    --}}}
+    --{{{  monitor
+    WHILE TRUE
+      INT16 len :
+      INT length :
+      [size.segment]BYTE buffer :
+      SEQ
+        to.application ? len::buffer
+        length := (INT len)
+        VAL linkchan IS (INT buffer[1]) :
+        CASE (INT buffer[0])
+          --{{{  0 connect
+          0
+            IF
+              length = 34
+                VAL [32]BYTE connections IS [buffer FROM 2 FOR 32] :
+                SEQ
+                  SEQ i = 0 FOR 32
+                    IF
+                      (INT connections[i]) < 32 -- Valid link no
+                        OUTPUT[linkchan] ! 0(BYTE); connections[i]; (BYTE i)
+                      TRUE
+                        SKIP
+                  OUTPUT[linkchan] ! 3(BYTE)
+          --}}}
+          --{{{  2 enquire
+          2
+            IF
+              length = 2
+                SEQ i = 0 FOR 32
+                  OUTPUT[linkchan] ! 2(BYTE); (BYTE i)
+          --}}}
+          --{{{  4 reset
+          4
+            IF
+              length = 2
+                OUTPUT[linkchan] ! 4(BYTE)
+          --}}}
+          --{{{  8 find out C004 type
+          8
+            BYTE temp :
+            BYTE c004type :
+            TIMER TIME :
+            INT now :
+            SEQ
+              pause ! linkchan -- switch off ALT
+              OUTPUT[linkchan] ! 2(BYTE); 2(BYTE) -- read link 2, in case it is a C004b
+              INPUT[linkchan] ? temp              -- C004a disconnect does not work
+              OUTPUT[linkchan] ! [5(BYTE),2(BYTE),5(BYTE)]
+              -- in C004b-ese, this is disconnect link 2, disconnect ?
+              -- in C004a-ese, this is NOOP, query link 5 (which returns a byte)
+              TIME ? now
+              ALT
+                TIME ? AFTER now PLUS 5                     -- its a C004b
+                  SEQ
+                    c004type := 'b'
+                    OUTPUT[linkchan] ! 2(BYTE)                -- complete disconnect
+                    IF
+                      ((INT temp) /\ $80) <> 0              -- it was connected
+                        -- Preserve this directed selection only; the enquiry byte
+                        -- contains a connection-status bit, not an input number.
+                        OUTPUT[linkchan] ! [0(BYTE), (BYTE ((INT temp) /\ $1F)), 2(BYTE), 3(BYTE)]
+                      TRUE
+                        SKIP
+                INPUT[linkchan] ? temp                        -- its a C004a
+                  c004type := 'a'                           -- no damage done
+              OUTPUT[bootchan] ! 1(INT16)::[c004type]
+              pause ! linkchan  -- un-pause
+          --}}}
+    --}}}
+:
+
+
+
+--
+--  eof
+--

@@ -1,0 +1,69 @@
+PROC peekpoke(CHAN OF INT16::[]BYTE input, CHAN OF ANY output)
+  [12]BYTE command:
+  INT16 len :
+  WHILE TRUE
+    --{{{  HARD CHAN DECLs
+    [4]CHAN OF ANY OUT :
+    PLACE OUT AT 0 :
+    [4]CHAN OF ANY INPUT :
+    PLACE INPUT AT 4 :
+    --}}}
+    SEQ
+      input ? len::command
+      []INT words RETYPES command :
+      CASE (INT command[0])
+        --{{{  0 poke word
+        0
+          IF
+            (INT len) = (3*bpw)
+              intmem[words[1]>>shift] := words[2]
+        --}}}
+        --{{{  1 peek word
+        1
+          IF
+            (INT len) = (2*bpw)
+              SEQ
+                words[0] := intmem[words[1]>>shift]
+                output ! (INT16 bpw)::command
+        --}}}
+        --{{{  2 poke byte
+        2
+          IF
+            (INT len) = ((2*bpw)+1)
+              memory[words[1]] := (BYTE (words[2] /\ $FF))
+        --}}}
+        --{{{  3 peek byte
+        3
+          IF
+            (INT len) = (2*bpw)
+              SEQ
+                words[0] := (INT memory[words[1]])
+                output ! 1(INT16)::command
+        --}}}
+        --{{{  4 suck memory block
+        4
+          IF
+            (INT len) = (2*bpw)
+              input ? len::[memory FROM words[1] FOR (INT len)]
+        --}}}
+        --{{{  5 blow memory block
+        5
+          IF
+            (INT len) = (3*bpw)
+              output ! (INT16 words[2])::[memory FROM words[1] FOR words[2]]
+        --}}}
+        --{{{  6 poke link
+        6
+          OUT[(INT command[1])] ! 0(BYTE); [command FROM 2 FOR (INT len)-2]
+        --}}}
+        --{{{  7 peek link
+        7
+          INT length :
+          SEQ
+            length := (INT len)-2
+            output ! (INT16 length)   -- cunning method of switching off ALT
+            OUT[(INT command[1])] ! 1(BYTE); [command FROM 2 FOR length]
+            INPUT[(INT command[1])] ? [command FROM 0 FOR length]
+            output ! [command FROM 0 FOR length]
+        --}}}
+:

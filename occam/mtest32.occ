@@ -1,0 +1,401 @@
+
+-- --------------------------------------------------
+--
+--    mtest32.occ  --  32bit mtest code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC mtest32(VAL INT bootchan)
+  CHAN OF INT TIME :
+  --{{{  VALs
+  VAL passing IS 0(BYTE):
+  VAL booting IS 1(BYTE):
+  VAL special IS 1(BYTE):
+  VAL size.segment IS 20 :
+  --}}}  
+  --{{{  PROC ramtest  ([]INT vector, VAL INT startaddress, []BYTE info)
+  PROC ramtest( []INT vector, VAL INT startaddress, [16]BYTE info)
+    INT speed RETYPES [info FROM 8 FOR 4] :
+    --{{{  PROC random
+    PROC random(INT seed)
+      INT bits :
+      SEQ
+        bits := seed /\ 3
+        IF
+          (bits = 0) OR (bits = 3)
+            seed := seed >> 1
+          TRUE
+            seed := (seed >> 1) \/ #80000000
+    :
+    --}}}  
+    --{{{  PROC storetest
+    PROC storetest(VAL INT data, INT error)
+      SEQ
+        --{{{  slice set
+        vector[0] := data
+        [vector FROM 1 FOR (SIZE vector)-1] := [vector FROM 0 FOR (SIZE vector)-1]
+        --}}}  
+        --{{{  test
+        SEQ i = 0 FOR (SIZE vector)
+          error := error \/ (vector[i] >< data)
+        --}}}  
+    :
+    --}}}  
+    --{{{  PROC itest
+    PROC itest([]INT vector, INT error)
+      INT count :
+      SEQ
+        --{{{  slice set to ADC 1
+        vector[0] := #81818181
+        [vector FROM 1 FOR (SIZE vector)-2] := [vector FROM 0 FOR (SIZE vector)-1]
+        --}}}  
+        vector[0] := #8140DF60 -- STL -1 LDC 0 ADC 1
+        vector[(SIZE vector)-3] := #F67F6081 -- ADC 1 LDL -1 GCALL
+          -- make sure that a prefetch doesnt go off boundary
+    
+        --{{{  call vector
+        GUY
+          LDLP vector
+          GCALL
+          STL count
+          STL count
+        --}}}  
+        []BYTE b.vector RETYPES vector :
+        error := error \/ (((SIZE b.vector) - count)-14) -- instructions
+    :
+    --}}}  
+    --{{{  table of primes
+    VAL primes IS [1019,  1187,  3121,   4691,  8039,   8863,
+                       14149, 16111, 18061, 26209, 44453,  72043,
+                       101111, 100003] :
+    --}}}  
+    --{{{  PROC randomtest
+    PROC randomtest(INT seed, error)
+      INT key, address, data, prime :
+      SEQ
+        random(seed)
+        SEQ pass = 0 FOR 2
+          SEQ
+            IF
+              pass = 0
+                key := seed
+              TRUE
+                SEQ
+                  seed := key
+            --{{{  address setup
+            prime := seed /\ #F
+            IF
+              prime >= (SIZE primes)
+                prime := 101111
+              TRUE
+                prime := primes[prime]
+            random(seed)
+            address := (seed /\ #7FFFFFFF) \ (SIZE vector)
+            --}}}  
+            --{{{  store or test
+            SEQ i = 0 FOR (SIZE vector)/2
+              SEQ
+                address := (address + prime) \ (SIZE vector)
+                random(seed)
+                data := seed
+                IF
+                  pass = 0
+                    vector[address] := data
+                  TRUE
+                    error := error \/ (vector[address] >< data)
+            --}}}  
+    :
+    --}}}  
+    --{{{  PROC randombyte
+    PROC randombyte(INT seed, error)
+      []BYTE b.vector RETYPES vector :
+      INT key, address, prime :
+      BYTE data :
+      SEQ
+        random(seed)
+        SEQ pass = 0 FOR 2
+          SEQ
+            IF
+              pass = 0
+                key := seed
+              TRUE
+                SEQ
+                  seed := key
+            --{{{  address setup
+            prime := seed /\ #F
+            IF
+              prime >= (SIZE primes)
+                prime := 101111
+              TRUE
+                prime := primes[prime]
+            random(seed)
+            address := (seed /\ #7FFFFFFF) \ (SIZE vector)
+            --}}}  
+            --{{{  store or test
+            SEQ i = 0 FOR (SIZE vector)/2
+              SEQ
+                address := (address + prime) \ (SIZE b.vector)
+                random(seed)
+                data := (BYTE (seed /\ #FF))
+                IF
+                  pass = 0
+                    b.vector[address] := data
+                  TRUE
+                    error := error \/ ((INT b.vector[address]) >< (INT data))
+            --}}}  
+    :
+    --}}}  
+    --{{{  PROC addresstest
+    PROC addresstest(VAL INT start, INT error)
+      SEQ
+        --{{{  set
+        SEQ i = 0 FOR SIZE vector
+          vector[i] :=  start+i
+        --}}}  
+        --{{{  test
+        SEQ i = 0 FOR SIZE vector
+          error := error \/ (vector[i] >< (start+i))
+        --}}}  
+    :
+    --}}}  
+    TIMER TIME :
+    INT seed, testcount :
+    INT error RETYPES [info FROM 12 FOR 4]:
+    SEQ
+      TIME ? seed
+      testcount := (INT info[2])
+      WHILE (testcount < 5) AND (error = 0)
+        SEQ
+          CASE testcount
+            0
+              SEQ
+                storetest(#FFFFFFFF, error)
+                storetest(0, error)
+            1
+              randombyte(seed, error)
+            2
+              randomtest(seed, error)
+            3
+              itest(vector, error)
+            4
+              addresstest(startaddress, error)
+          testcount := testcount+1
+      info[2] := (BYTE testcount)
+  :
+  --}}}  
+  --{{{  PROC speedtest([]INT vector, INT speed)
+  PROC speedtest([]INT vector, INT speed)
+    INT now, then :
+    SEQ
+      TIME ? now           -- throw away, start clock
+      vector := vector
+      TIME ? now           -- start
+      TIME ? then          -- finish
+      speed := then MINUS now
+  :
+  --}}}  
+  --{{{  PROC pass.packet, expects length to have been input
+  PROC pass.packet(CHAN OF ANY input, output, INT length, VAL BYTE status)
+    [size.segment]BYTE buffer :
+    SEQ
+      IF
+        status = booting
+          SKIP
+        TRUE
+          output ! (INT16 length)
+      WHILE length > 0
+        IF
+          --{{{  block too big
+          length > size.segment
+            SEQ
+              input ? buffer
+              output ! buffer
+              length := length - size.segment
+          --}}}  
+          --{{{  block fits
+          TRUE
+            SEQ
+              input ? [buffer FROM 0 FOR length]
+              output ! [buffer FROM 0 FOR length]
+              length := 0
+          --}}}  
+  :
+  --}}}  
+  --{{{  hard CHANs, INPUT and OUTPUT
+  CHAN OF ANY link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [link.out.0, link.out.1,
+                            link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [link.in.0, link.in.1,
+                           link.in.2, link.in.3] :
+  CHAN OF ANY COMMAND IS INPUT[bootchan] :
+  --}}}  
+  CHAN OF ANY to.application, from.application :
+  PRI PAR
+    PAR
+      --{{{  Hi Pri timer, (nearly) always read twice.
+      TIMER clock :
+      INT now :
+      WHILE TRUE
+        SEQ
+          clock ? now
+          TIME ! now
+      --}}}  
+      --{{{  stuff from root
+      --{{{  DECLs
+      [4]BYTE tag :  -- 0 is scratch, 1 is mode, 2 is path, 3 is special
+      [4]BYTE lenbytes :
+      INT length RETYPES lenbytes :
+      --}}}  
+      SEQ
+        tag[1] := passing
+        lenbytes := [0(BYTE),0(BYTE),0(BYTE),0(BYTE)]
+        WHILE TRUE
+          SEQ
+            COMMAND ? [lenbytes FROM 0 FOR 2]
+            IF
+              --{{{  escape
+              length = #FFFF
+                SEQ
+                  COMMAND ? tag[0]
+                  IF
+                    --{{{  setpath
+                    tag[0] = TAG.SETPATH
+                      SEQ
+                        COMMAND ? [lenbytes FROM 0 FOR 2]
+                        COMMAND ? tag[2]
+                        length := length-1
+                        tag[1] := passing
+                        IF
+                          --{{{  length = 0
+                          length = 0
+                            IF
+                              tag[2] = TAG.HALT
+                                --{{{  stop
+                                SEQ
+                                  ASM
+                                    OPR #1FF -- reboot
+                                --}}}  
+                              TRUE
+                                tag[3] := special
+                          --}}}  
+                          --{{{  otherwise
+                          TRUE
+                            CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+                            SEQ
+                              tag[3] := 0(BYTE) -- non-special
+                              NEXT ! ESCAPE; TAG.SETPATH
+                              pass.packet(COMMAND, NEXT, length, passing)
+                          --}}}  
+                    --}}}  
+                    --{{{  I'm not special, following IFs are special
+                    tag[3] <> special
+                      OUTPUT[(INT tag[2])] ! ESCAPE; tag[0]
+                    --}}}  
+                    --{{{  boot
+                    tag[0] = TAG.BOOT
+                      tag[1] := booting  -- set boot mode
+                    --}}}  
+              --}}}  
+              TRUE
+                IF
+                  tag[2] = 4(BYTE)
+                    pass.packet(COMMAND, to.application, length, tag[1])
+                  TRUE
+                    pass.packet(COMMAND, OUTPUT[(INT tag[2])],
+                                length, tag[1])
+      --}}}  
+      --{{{  outgoing lines, requests                  -- return
+      WHILE TRUE
+        [4]BYTE lenbytes :
+        INT length RETYPES lenbytes :
+        SEQ
+          lenbytes := [0(BYTE),0(BYTE),0(BYTE),0(BYTE)]
+          ALT
+            ALT i = 1 FOR 3
+              CHAN OF ANY MYINPUT IS INPUT[(bootchan+i)\4] :
+              MYINPUT ? [lenbytes FROM 0 FOR 2]
+                pass.packet(MYINPUT, OUTPUT[bootchan], length, passing)
+            from.application ? length
+              pass.packet(from.application, OUTPUT[bootchan], length, passing)
+      --}}}  
+    --{{{  ramtest
+    --{{{  info
+    [16]BYTE info :
+    -- [info FROM 0 FOR 2] = id
+    --  info     [2]       = test which failed
+    --  info     [3]       = error / wrap
+    -- [info FROM 4 FOR 4] = bytes found
+    -- [info FROM 8 FOR 4] = memory speed
+    -- [info FROM 12 FOR 4]= error bits
+    --}}}  
+    BYTE start.test :
+    INT end.addr :
+    WHILE TRUE  -- so we can do soak tests
+      SEQ
+        --{{{  read processor id, start.test, end.addr
+        -- INT16 id RETYPES [info FROM 0 FOR 2] :
+        SEQ
+          INT16 len :
+          to.application ? len
+          to.application ? info
+          start.test := info[2]
+          INT end RETYPES [info FROM 4 FOR 4] :
+          end.addr := end
+        --}}}  
+        [#4000000]INT ram :
+        PLACE ram AT 0 :
+        VAL block.size IS 512 :
+        INT addr  RETYPES [info FROM 4 FOR 4]:
+        INT speed RETYPES [info FROM 8 FOR 4] :
+        INT error RETYPES [info FROM 12 FOR 4] :
+        SEQ
+          addr := 0
+          info[3] := 0(BYTE)
+          error := 0
+          WHILE info[3] = 0(BYTE)
+            INT check :
+            SEQ
+              info[2] := start.test
+              IF
+                addr = 0
+                  SKIP
+                TRUE
+                  --{{{  test and check RAM
+                  SEQ
+                    ramtest([ram FROM addr FOR block.size], addr, info)
+                    check := block.size
+                    WHILE (check < addr) AND (ram[check] = check)
+                      check := check+block.size
+                    IF
+                      error <> 0
+                        info[3] := 1(BYTE)
+                      check <> addr
+                        info[3] := $FF(BYTE)
+                      (addr + block.size) >= end.addr
+                        info[3] := 2(BYTE)
+                      TRUE
+                        SKIP
+                  --}}}  
+              from.application ! 16     -- your attention, please
+              speedtest([ram FROM addr FOR block.size], speed)
+              from.application ! info
+              addr := addr PLUS block.size
+    --}}}  
+:
+
+
+--
+--  eof
+--

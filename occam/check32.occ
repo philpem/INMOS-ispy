@@ -1,0 +1,327 @@
+
+-- --------------------------------------------------
+--
+--    check32.occ  --  32bit check code
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+VAL size.segment IS 32 :
+PROC check32(VAL INT bootchan)
+  --{{{  hard CHANs, INPUT and OUTPUT
+  CHAN OF ANY link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [link.out.0, link.out.1,
+                            link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [link.in.0, link.in.1,
+                           link.in.2, link.in.3] :
+  CHAN OF ANY COMMAND IS INPUT[bootchan] :
+  --}}}  
+  --{{{  VALs
+  VAL passing IS 0(BYTE):
+  VAL booting IS 1(BYTE):
+  VAL special IS 1(BYTE):
+  --}}}  
+  --{{{  PROC pass.packet, expects length to have been input
+  PROC pass.packet(CHAN OF ANY input, output, INT length, VAL BYTE status)
+    [size.segment]BYTE buffer :
+    SEQ
+      IF
+        status = booting
+          SKIP
+        TRUE
+          output ! (INT16 length)
+      WHILE length > 0
+        IF
+          --{{{  block too big
+          length > size.segment
+            SEQ
+              input ? buffer
+              output ! buffer
+              length := length - size.segment
+          --}}}  
+          --{{{  block fits
+          TRUE
+            SEQ
+              input ? [buffer FROM 0 FOR length]
+              output ! [buffer FROM 0 FOR length]
+              length := 0
+          --}}}  
+  :
+  --}}}  
+  INT16 myid :
+  SEQ
+    COMMAND ? myid; myid  -- ISERVER protocol
+    [3] CHAN OF ANY pass :
+    PAR
+      --{{{  stuff from root
+      --{{{  DECLs
+      [4]BYTE tag :  -- 0 is scratch, 1 is mode, 2 is path, 3 is special
+      INT16 len :
+      INT length :
+      --}}}  
+      SEQ
+        tag[1] := passing
+        WHILE TRUE
+          CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+          SEQ
+            COMMAND ? len
+            length := (INT len)
+            IF
+              --{{{  escape
+              length = (INT ESCAPE)
+                SEQ
+                  COMMAND ? tag[0]
+                  IF
+                    --{{{  setpath, possibly stop
+                    tag[0] = TAG.SETPATH
+                      SEQ
+                        COMMAND ? len; tag[2]
+                        length := (INT len)-1
+                        tag[1] := passing
+                        IF
+                          --{{{  length = 0
+                          length = 0
+                            IF
+                              tag[2] = TAG.HALT
+                                --{{{  stop
+                                SEQ
+                                  SEQ i = 1 FOR 3
+                                    VAL thischan IS (i+bootchan)\4 :
+                                    CHAN OF ANY inchan  IS INPUT[thischan] :
+                                    CHAN OF ANY outchan IS OUTPUT[thischan] :
+                                    SEQ
+                                      ASM
+                                        LDL inchan
+                                        RESETCH
+                                        LDL outchan
+                                        RESETCH
+                                  ASM
+                                    OPR #1FF -- reboot
+                                --}}}  
+                              TRUE
+                                tag[3] := special
+                          --}}}  
+                          --{{{  otherwise
+                          TRUE
+                            CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+                            SEQ
+                              tag[3] := 0(BYTE) -- non-special
+                              NEXT ! ESCAPE; TAG.SETPATH
+                              pass.packet(COMMAND, NEXT, length, passing)
+                          --}}}  
+                    --}}}  
+                    --{{{  I'm not special, following IFs are special
+                    tag[3] <> special
+                      NEXT ! ESCAPE; tag[0]
+                    --}}}  
+                    --{{{  boot
+                    tag[0] = TAG.BOOT
+                      tag[1] := booting  -- set boot mode
+                    --}}}  
+                    --{{{  lspeed
+                    tag[0] = TAG.LSPEED
+                      [257]BYTE buffer :
+                      PLACE buffer AT 0 :
+                      NEXT ! buffer
+                    --}}}  
+              --}}}  
+              TRUE
+                pass.packet(COMMAND, NEXT, length, tag[1])
+      --}}}  
+      PAR i = 1 FOR 3                                -- pass[i]
+        --{{{  DECLs
+        VAL thischan IS (bootchan+i)\4 :
+        CHAN OF BYTE link.reply :
+        --}}}  
+        --{{{  COMMENT  on strategy.
+        --Strategy is as follows :-
+        --1) Send Primary bootstrap. A TP can receive multiple bootstraps.
+        --   Replies we could get are :-
+        --   C004 - a single byte.
+        --   T32, T16 - no reply.
+        --   Older TP - sends 255(BYTE); its id; its channel
+        --2) If it is an older TP, or a C004, we do nothing.
+        --   If it is an unbooted TP, we peek it to find out T32 or T16.
+        --   A TP will respond to multiple peeks down various links.
+        --3) CHECKOUT will then decide which link to boot.
+        --4) Service.requests will handle subsequent traffic.
+        --   If a Primary bootstrap arrives, tell sender process to
+        --   send 'old transputer' string, includes my id.
+        --}}}  
+        PAR
+          --{{{  poke test
+          --{{{  DECLs
+          CHAN OF ANY BOOT IS OUTPUT[thischan] :
+          VAL [23]BYTE bootstring IS
+              [ $17(BYTE),                        -- length of bootstrap = 23
+                $B1(BYTE),                        -- AJW 1, allow for Iptr store
+                $D1(BYTE),                        -- STL 1
+                $24(BYTE), $F2(BYTE),             -- MINT
+                $21(BYTE), $FC(BYTE),             -- STHF
+                $24(BYTE), $F2(BYTE),             -- MINT
+                $21(BYTE), $F8(BYTE),             -- STLF
+                $F0(BYTE),                        -- REV
+                $60(BYTE), $5C(BYTE),             -- LDNLP -4
+                $2A(BYTE), $2A(BYTE), $2A(BYTE), $4A(BYTE),  -- LDC $AAAA
+                $FF(BYTE),                        -- OUTWORD
+                $21(BYTE), $2F(BYTE), $FF(BYTE),  -- START
+                $02(BYTE) ] :                     -- C004 read link
+          
+          --{{{  COMMENT on bootstrap
+          -- We add one more byte to this string.
+          --Result of this bootstrap :-
+          --32 bit TP - output 4 bytes
+          --'Alive TP'  output 3 bytes
+          --16 bit TP - output 2 bytes
+          --C004      - output 1 byte
+          --
+          --We will arrange that a bootstrapped TP will output 3 bytes
+          --}}}  
+          --}}}  
+          BYTE token :
+          SEQ
+            BOOT ! bootstring; (BYTE thischan) -- always send primary bootstrap
+            WHILE TRUE
+              SEQ
+                link.reply ? token
+                IF
+                  token = qTXXX
+                    BOOT ! myid; (BYTE thischan)
+                  token = qC4
+                    BOOT ! [2(BYTE),0(BYTE)] -- lets make sure
+          --}}}  
+          --{{{  incoming requests
+          --{{{  DECLs
+          CHAN OF ANY output IS pass[i-1] :
+          CHAN OF ANY MYINPUT IS INPUT[thischan] :
+          VAL special.len1 IS $B117 :
+          --}}}  
+          --{{{  PROC handle.boot()
+          PROC handle.boot()
+            --{{{  comment on protocols
+            -- return  BYTE 0  1    2
+            --         TXXX    RX
+            --         TXXX    - id -  TXlink RXlink
+            --         TXXX    TX   RXlink
+            --         T32     RX
+            --         T16     RX
+            --         C4      RX
+            --         0                   (good RAM)
+            --         1                   (bad  RAM)
+            --}}}  
+            --{{{  DECLs
+            TIMER TIME :
+            INT now, count :
+            [8]BYTE buffer :
+            INT looking :
+            --}}}  
+            SEQ
+              count := 0
+              looking := 1
+              TIME ? now
+              --{{{  count bytes from link, into buffer
+              WHILE looking<>0         -- this is response to primary bootstrap
+                PRI ALT
+                  MYINPUT ? buffer[(count+4)\8] -- leave space at beginning
+                    count := count+1
+                  TIME ? AFTER now PLUS LINK.TIMEOUT
+                    looking := 0
+              --}}}  
+              IF
+                --{{{  count = 3, already booted TP
+                count = 3
+                  SEQ
+                    buffer[3] := qTXXX
+                    buffer[7] := (BYTE thischan)  -- RX link
+                    output ! 5(INT16)::[buffer FROM 3 FOR 5]
+                --}}}  
+                --{{{  count = 24, myself booting myself
+                count = 24
+                  SEQ
+                    buffer[2] := qTXXX
+                    buffer[4] := (BYTE thischan)
+                    output ! 3(INT16)::[buffer FROM 2 FOR 3]
+                --}}}  
+                --{{{  otherwise, C004 or unbooted TP (Dont do RAMTEST)
+                TRUE
+                  SEQ
+                    --{{{  double-check C004, T16, T32
+                    IF
+                      count = 1
+                        SEQ
+                          WHILE TRUE
+                            SKIP
+                          IF
+                            buffer[4] = 0(BYTE)
+                              output ! 2(INT16)::[qHALF, (BYTE thischan)]
+                            TRUE
+                              SKIP
+                          link.reply ! qC4      -- lets make sure
+                          MYINPUT ? buffer[0]    -- trash
+                      TRUE
+                        IF
+                          (buffer[4] <> $AA(BYTE)) OR (buffer[5] <> $AA(BYTE))
+                            count := 0            -- Change to qTXXX
+                          TRUE
+                            SKIP
+                    --}}}  
+                    buffer[0] := [qTXXX, qC4, qT16, qTXXX, qT32][count]
+                    buffer[1] := (BYTE thischan)
+                    output ! 2(INT16)::buffer
+                --}}}  
+          :
+          --}}}  
+          SEQ
+            handle.boot()
+            WHILE TRUE
+              --{{{  return packets
+              WHILE TRUE
+                BYTE len :
+                INT length :
+                SEQ
+                  MYINPUT ? len
+                  length := (INT len)
+                  MYINPUT ? len
+                  length := ((INT len) << 8) + length
+                  IF
+                    --{{{  we are receiving a bootstrap
+                    length = special.len1
+                      SEQ
+                        --{{{  swallow bootstrap
+                        SEQ i = 0 FOR 22
+                          [4]BYTE trash :
+                          MYINPUT ? trash[0]
+                        --}}}  
+                        link.reply ! qTXXX
+                    --}}}  
+                    TRUE
+                      pass.packet(MYINPUT, output, length, passing)
+              --}}}  
+          --}}}  
+      --{{{  outgoing lines, requests                  -- return
+      WHILE TRUE
+        INT16 len :
+        INT length :
+        ALT j = 0 FOR SIZE(pass)
+          pass[j] ? len
+            SEQ
+              length := (INT len)
+              pass.packet(pass[j], OUTPUT[bootchan], length, passing)
+      --}}}  
+:
+
+
+--
+--  eof
+--

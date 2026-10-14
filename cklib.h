@@ -33,6 +33,9 @@ struct tpstats
     int		    	linkno[4];	/* link numbers, or non-transputer type */
 };
 
+#define C004_PORTS 32
+#define C004_EMPTY (-1)
+
 struct c4stats
 {
     struct tpstats  *parent,	/* where I was born */
@@ -43,7 +46,7 @@ struct c4stats
 		    		tptype,	/* Transputer type */
 		    		route,	/* incremental route here */
 		    		routelen;	/* route length from host */
-    char	    	config[32]; /* state */
+    signed char    	config[32]; /* state */
 };
 
 int		bpw(int tptype);

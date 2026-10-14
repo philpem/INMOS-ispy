@@ -1,0 +1,114 @@
+
+-- --------------------------------------------------
+--
+--    type32.occ  --  32bit check code
+--    
+-- --------------------------------------------------
+
+
+
+PROC type32(VAL INT bootlink)
+  #INCLUDE "checklib.occ"
+  --{{{  DECLs
+  [6]BYTE stats :
+  CHAN OF INT16::[]BYTE link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF INT16::[]BYTE link.out IS [link.out.0, link.out.1,
+					link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY link.in IS [link.in.0, link.in.1,
+			     link.in.2, link.in.3] :
+  CHAN OF INT16::[]BYTE out IS link.out[bootlink] :
+  --}}}  
+  PRI PAR
+    --{{{  DECLs
+    CHAN OF ANY in IS link.in[bootlink] :
+    INT now, then, tpid1, tpid2 :
+    INT16 tpid RETYPES [stats FROM 0 FOR 2]:
+    --}}}  
+    TIMER TIME :
+    SEQ
+      --{{{  set tpid, T414B, T800D, 0=(tpid works) > stats[0,1]
+      SEQ
+	ASM
+	  LDC T800D
+	  LDC T414B
+	  LDC 0
+	  OPR $17C
+	  STL tpid1
+	  STL tpid2
+	IF
+	  tpid2 = 0
+	    tpid := (INT16 tpid1)
+	  TRUE
+	    tpid := (INT16 tpid2)
+      --}}}  
+      --{{{  Check for T800C / T800D differences
+      IF
+	(INT tpid) = T800D
+	  VAL INFINITY IS #7F800000 :
+	  INT x :
+	  SEQ
+	    x := INFINITY
+	    --{{{  inf REM inf
+	    GUY
+	      LDLP x
+	      OPR 142  -- FPLDNLSN
+	      LDLP x
+	      OPR 142
+	      OPR 143  -- FPREMFIRST
+	      EQC 0
+	      CJ .NEXT
+	      :LOOP
+	      OPR 144  -- FPREMSTEP
+	      CJ .LOOP
+	      :NEXT
+	      LDLP x
+	      OPR 136  -- FPSTNLSN
+	    --}}}  
+	    IF
+	      x = INFINITY
+		tpid := (INT16 T800C)
+	      TRUE
+		SKIP
+	TRUE
+	  SKIP
+      --}}}  
+      --{{{  proc speed                           > stats[2]
+      TIME ? now
+      GUY
+	LDC 1000
+	SHL
+      TIME ? then
+      stats[2] := (BYTE (1020/(then MINUS now)))
+      --}}}  
+      stats[3] := (BYTE bootlink)
+      --{{{  link speed
+      INT16 lspeed RETYPES [stats FROM 4 FOR 2]:
+      SEQ
+	BYTE b :
+	in ? b   -- to start clock
+	TIME ? now
+	[256]BYTE block :
+	PLACE block AT 448 :
+	in ? block
+	TIME ? then
+	lspeed := (INT16 (then MINUS now))
+      --}}}  
+      out ! 6(INT16)::stats
+      ASM
+	OPR $1FF
+    SKIP
+:
+
+
+--
+--  eof
+--
