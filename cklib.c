@@ -272,6 +272,74 @@ int		readtp(char *tputer)
 }
 /*}}}  */
 /*{{{  int	       lex(....) */
+/* A C004 map stores input selections indexed by output. Long-form templates
+ * use INPUT>OUTPUT, as documented; '-' sets both directions. */
+static int c004port(char **cursor, int id)
+{
+    char *end;
+    long port;
+    while (isspace((unsigned char)**cursor)) (*cursor)++;
+    if (!isdigit((unsigned char)**cursor))
+        AbortExit("lex", "C004 %d: expected port number", id);
+    port = strtol(*cursor, &end, 10);
+    if (port < 0 || port >= C004_PORTS)
+        AbortExit("lex", "C004 %d: link number out of range", id);
+    *cursor = end;
+    return (int)port;
+}
+
+static void c004selection(struct c4stats *q, int output, int input)
+{
+    if (q->config[output] != C004_EMPTY)
+        AbortExit("lex", "C004 %d: link %d connected twice", q->tpid, output);
+    q->config[output] = (signed char)input;
+}
+
+static void parsec004(struct c4stats *q, char *cursor)
+{
+    int output = 0;
+    char bracket;
+    while (*cursor && *cursor != '[' && *cursor != '(') cursor++;
+    bracket = *cursor++;
+    if (bracket != '[' && bracket != '(')
+        AbortExit("lex", "C004 %d: missing configuration", q->tpid);
+    for (;;) {
+        while (isspace((unsigned char)*cursor)) cursor++;
+        if (*cursor == (bracket == '[' ? ']' : ')')) return;
+        if (!*cursor)
+            AbortExit("lex", "C004 %d: unterminated configuration", q->tpid);
+        if (bracket == '[') {
+            int input;
+            if (output >= C004_PORTS)
+                AbortExit("lex", "C004 %d: too many ports", q->tpid);
+            if (*cursor == '-') {
+                cursor++;
+                output++;
+                continue;
+            }
+            for (input = 0; input < C004_PORTS && LETTER[input] != *cursor; input++);
+            if (input == C004_PORTS)
+                AbortExit("lex", "C004 %d: invalid port character", q->tpid);
+            q->config[output++] = (signed char)input;
+            cursor++;
+        } else {
+            int first = c004port(&cursor, q->tpid), second;
+            char delimiter;
+            while (isspace((unsigned char)*cursor)) cursor++;
+            delimiter = *cursor;
+            if (delimiter != '-' && delimiter != '>')
+                AbortExit("lex", "C004 %d: expected '-' or '>'", q->tpid);
+            cursor++;
+            second = c004port(&cursor, q->tpid);
+            c004selection(q, second, first);
+            if (delimiter == '-' && first != second)
+                c004selection(q, first, second);
+            if (*cursor && !isspace((unsigned char)*cursor) && *cursor != ')')
+                AbortExit("lex", "C004 %d: invalid connection", q->tpid);
+        }
+    }
+}
+
 int		lex(FILE * stream, struct tpstats ** root,
 				    char *Pipe, char *LinkName, char *Banner)
 {
@@ -305,7 +373,7 @@ int		lex(FILE * stream, struct tpstats ** root,
 	    char	    bootspeed[6];
 	    char	    tputer[6];
 	    char	    linkinfo[4][10];
-	    char	    delimiter, c;
+	    char	    c;
 	    i = sscanf(line, "%d %5c-%2d %s %d [ %s %s %s %s ]",
 		       &tpid, tputer, &procspeed,
 		       bootspeed, &bootlink,
@@ -358,104 +426,25 @@ int		lex(FILE * stream, struct tpstats ** root,
 	    } else if (i > 0)
 	    {
 		struct c4stats *q;
-		int		from = 0, to = 0;
-		char		bracket, *c;
-		i = sscanf(line, "%d %s", &tpid, tputer);
-		if ((i == 2) && (tputer[0] == 'C'))
-		{
-		    q = (struct c4stats *) Malloc(sizeof(struct c4stats));
-		    if (curr != NULL)
-			curr->next = (struct tpstats *) q;
-		    else
-			*root = (struct tpstats *) q;
-		    curr = curr->next;
-		    strcpy(q->info, line);
-		    q->next = NULL;
-		    q->extra = NULL;
-		    q->parent = NULL;
-		    q->routelen = -1;
-		    q->tpid = tpid;
-		    q->tptype = readtp(tputer);
-		    if (class(q->tptype) != C4)
-			AbortExit("lex", "%s ???", line);
-		    for (i = 0; i < C004_PORTS; i++)
-				q->config[i] = C004_EMPTY;
-		    for (i = 0; (line[i] != '[') && (line[i] != '(') && line[i]; i++);
-		    bracket = line[i++];
-		    switch (bracket)
-		    {
-			case '[':
-			    for (to = 0; (line[i] != 0) && (line[i] != ']'); i++)
-			    {
-				if (to >= C004_PORTS)
-				    AbortExit("lex", "C004 %d: too many ports", tpid);
-				switch (line[i])
-				{
-				    case '-':
-					to++;
-					break;
-				    case ' ':
-					break;
-				    default:
-					for (from = 0; (from < C004_PORTS) && (LETTER[from] != line[i]); from++);
-					if (from >= C004_PORTS)
-					    AbortExit("lex", "C004 %d: bad port '%c'", tpid, line[i]);
-					q->config[to] = (char) from;
-					to++;
-					break;
-				}
-			    }
-			    break;
-			case '(':
-			    c = &line[i];
-			    while (*c!=')' && (*c))
-			    {
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				if (*c)
-				    from = atoi(c);
-				while (*c && (*c!='-') && (*c!='>'))
-				    c++;
-				delimiter = *c;
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				if (*c)
-				    to = atoi(c);
-				while (*c && (*c>='0') && (*c<='9'))
-				    c++;
-				if (!*c)
-				    continue;
-				while (*c && ((*c<'0') || (*c>'9')))
-				    c++;
-				if ((from < 0) || (from >= C004_PORTS) ||
-				    (to < 0) || (to >= C004_PORTS))
-				    AbortExit("lex", "C004 %d: link number out of range %d-%d",
-					      tpid, from, to);
-				switch (delimiter)
-				{
-				    case '-':
-					if (q->config[from] == C004_EMPTY)
-					    q->config[from] = (char) to;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
-						      tpid, from, to, q->config[from]);
-					if ((q->config[to] == C004_EMPTY) || (to == from))
-					    q->config[to] = (char) from;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected to %d and %d",
-						      tpid, to, from, q->config[to]);
-					break;
-				    case '>':
-					if (q->config[from] == C004_EMPTY)
-					    q->config[from] = (char) to;
-					else
-					    AbortExit("lex", "C004 %d: link %d connected twice",
-						      tpid, from);
-					break;
-				}
-			    }
-		    }
-		}
+        i = sscanf(line, "%d %5s", &tpid, tputer);
+        if ((i == 2) && (tputer[0] == 'C'))
+        {
+            q = (struct c4stats *) Malloc(sizeof(struct c4stats));
+            if (curr != NULL)
+                curr->next = (struct tpstats *) q;
+            else
+                *root = (struct tpstats *) q;
+            curr = (struct tpstats *) q;
+            strcpy(q->info, line);
+            q->routelen = -1;
+            q->tpid = tpid;
+            q->tptype = readtp(tputer);
+            if (class(q->tptype) != C4)
+                AbortExit("lex", "%s ???", line);
+            for (i = 0; i < C004_PORTS; i++)
+                q->config[i] = C004_EMPTY;
+            parsec004(q, line);
+        }
 	    } else
 		fprintf(stderr, "%s ???\n", line);
 	}
@@ -626,7 +615,7 @@ void		writeCl(struct c4stats * q)
 			if (j >= i)
 				printf("%d-%d ", i, j);
 		} else
-			printf("%d>%d ", i, j);
+			printf("%d>%d ", j, i);
     }
 
     printf(")");
@@ -661,7 +650,7 @@ int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 
 		read_point += bytesread;
 		bytes_to_go -= (unsigned int) bytesread;
-		count--;
+		count = 10; /* Only consecutive empty reads count as a timeout. */
 	}
 
 	if (bytes_to_go != 0) {
@@ -706,27 +695,28 @@ int getiserver(LINK TheLink, unsigned int *length, unsigned char *string, unsign
 	return (readbytes(TheLink, string, *length) == (int) *length);
 }
 
+static int writebytes(LINK TheLink, unsigned int length, unsigned char *buffer)
+{
+	unsigned int done = 0;
+	while (done < length) {
+		int written = WriteLink(TheLink, &buffer[done], length - done, TIMEOUT);
+		if (written <= 0) return FALSE;
+		done += (unsigned int)written;
+	}
+	return TRUE;
+}
+
 int sendiserver(LINK TheLink, unsigned int length, unsigned char *buffer) {
 	unsigned char   int16[2];
-	unsigned int    done = 0;
 
 	int16[0] = (unsigned char) (length & 0xFF);
 	int16[1] = (unsigned char) (length >> 8);
 
-	if (WriteLink(TheLink, int16, 2, TIMEOUT) != 2) {
+	if (!writebytes(TheLink, 2, int16)) {
 		return (FALSE);
 	}
 
-	while (done < length) {
-		int written = WriteLink(TheLink, &buffer[done], length - done, TIMEOUT);
-
-		if (written <= 0) {
-			return (FALSE);
-		}
-		done += (unsigned int) written;
-	}
-
-	return (TRUE);
+	return writebytes(TheLink, length, buffer);
 }
 
 void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
