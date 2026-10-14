@@ -64,6 +64,9 @@ archives are from
 The generated headers for `type16/32`, `check16/32` and `mtest16/32` are
 byte-for-byte identical to the blobs in the released 3.23 binaries. The C004
 helpers are rebuilt from recovered monitor sources with protocol fixes.
+[Header validation and CHECK payload selection](docs/occam-header-validation.md)
+records the differences from the older repository headers and explains why the
+regenerated CHECK headers are retained.
 
 Run `make check` for host-build, disassembler and hardware-free C004 regression
 checks. See
