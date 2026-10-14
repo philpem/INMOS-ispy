@@ -34,6 +34,6 @@ int             testT425(LINK TheLink, struct tpstats * p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (0);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST425A", p->tpid);
+	return load_failed(p);
     return (1);
 }

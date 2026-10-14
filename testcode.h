@@ -8,6 +8,7 @@ struct testinfo
 };
 
 #ifdef __STDC__
+int load_failed(struct tpstats *p);
 int  getresult(LINK TheLink, struct tpstats *p, char logging);
 int testT2    (LINK TheLink, struct tpstats *p, char logging);
 int testT414  (LINK TheLink, struct tpstats *p, char logging);
@@ -19,6 +20,7 @@ int testT801  (LINK TheLink, struct tpstats *p, char logging);
 int later_supported(int type);
 int testLater(LINK link, struct tpstats *p, char logging, int probe);
 #else
+int load_failed();
 int  getresult();
 int testT2    ();
 int testT414  ();

@@ -54,6 +54,16 @@ class FtestHost(unittest.TestCase):
                 self.assertIn('0 T805g-25 (BAD)', result.stdout)
                 self.assertIn('1 T805g-25 (NOT TESTED)', result.stdout)
 
+    def test_load_and_router_restore_failures_report_partial_network(self):
+        for scenario, stage in (('load-fail', 'TEST85CM'), ('restore-fail', 'ROUTE32')):
+            with self.subTest(scenario=scenario):
+                result = self.run_case(scenario)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(stage + ': LOAD ERROR', result.stderr)
+                self.assertIn('0 T805g-25 (BAD)', result.stdout)
+                self.assertIn('1 T805g-25 (NOT TESTED)', result.stdout)
+                self.assertNotIn('VISIT PROCESSOR 1', result.stderr)
+
     def test_diagnostic_failure_preserves_routing_and_returns_failure(self):
         result = self.run_case('fail')
         self.assertEqual(result.returncode, 1)
@@ -109,7 +119,7 @@ class FtestHost(unittest.TestCase):
         self.assertIn('1 T805g-25  (OK)', result.stdout)
 
     def test_invalid_processor_selection_is_rejected(self):
-        for args in (['-n'], ['-n', '-1'], ['-n', '1x'], ['-n', '999999999999999999999999'], ['-n', '2']):
+        for args in (['-n'], ['-n', '-1'], ['-n', '1x'], ['-n', ' '], ['-n', '999999999999999999999999'], ['-n', '2']):
             with self.subTest(args=args):
                 result = self.run_case('pass', args)
                 self.assertNotEqual(result.returncode, 0)
@@ -166,6 +176,32 @@ class FtestHost(unittest.TestCase):
                 self.assertNotIn('LOAD TEST45', result.stderr)
                 self.assertIn('(PARTIAL)', result.stdout)
                 self.assertIn('RESTORE ROUTER 1', result.stderr)
+
+    def test_legacy_revision_dispatch_keeps_separate_address_maps(self):
+        for chip, payload in ((0, 'TEST425A'), (-8, 'TEST800A'), (-7, 'TEST800A')):
+            with self.subTest(chip=chip):
+                result = self.run_case('pass', chip=chip)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Processor 0: ' + payload, result.stderr)
+                self.assertNotIn('LOAD TEST85', result.stderr)
+                self.assertNotIn('LOAD TEST45', result.stderr)
+                self.assertNotIn('(PARTIAL)', result.stdout)
+
+    def test_probe_and_subtest_respect_processor_class_filter(self):
+        for args in (['-p', '-T4'], ['-d', 'cm', '-T4']):
+            with self.subTest(args=args):
+                result = self.run_case('pass', args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn('LOAD ', result.stderr)
+                self.assertEqual(result.stdout.count('(NOT TESTED)'), 2)
+
+    def test_skip_omits_legacy_t414_microcode_but_keeps_common_tests(self):
+        result = self.run_case('pass', ['-s'], chip=-19)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Processor 0: TESTT32A', result.stderr)
+        self.assertNotIn('Processor 0: TEST414A', result.stderr)
+        self.assertIn('# Skipped TEST414A', result.stdout)
+        self.assertEqual(result.stdout.count('(PARTIAL)'), 2)
 
     def test_probe_only_preserves_routing_and_reports_reduced_coverage(self):
         result = self.run_case('pass', ['-p'])

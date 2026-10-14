@@ -81,6 +81,10 @@ int load(LINK link, struct tpstats *node, long size, long offset,
         if (!strcmp(scenario, "probe-timeout"))
             fault_stage = node->tpid == 0 && !strcmp(q->stage, "PROBE85");
     }
+    if (node->tpid == 0 &&
+        ((!strcmp(scenario, "load-fail") && !strcmp(q->stage, "TEST85CM")) ||
+         (!strcmp(scenario, "restore-fail") && !strcmp(q->stage, "ROUTE32"))))
+        return FALSE;
     return TRUE;
 }
 int getiserver(LINK link, unsigned int *length, unsigned char *buffer, unsigned int maximum)

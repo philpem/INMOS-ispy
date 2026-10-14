@@ -28,7 +28,7 @@ static int run_payload(LINK link, struct tpstats *p, char logging,
     struct testinfo *q = (struct testinfo *) p->extra;
     q->stage = name;
     if (!load(link, p, size, entry, workspace, vectors, words, code))
-        AbortExit("ftest", "Failed to load processor %d - %s", p->tpid, name);
+        return load_failed(p);
     q->tested = TRUE;
     setroute(link, p->parent, p->route);
     return getresult(link, p, logging);

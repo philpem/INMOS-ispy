@@ -40,7 +40,7 @@ int            testT32(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (0);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TESTT32A", p->tpid);
+	return load_failed(p);
     q->stage = "TESTT32B";
     if (load(TheLink, p,
 	     testt32b_code.CodeSize,
@@ -54,6 +54,6 @@ int            testT32(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (0);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TESTT32B", p->tpid);
+	return load_failed(p);
     return (1);
 }

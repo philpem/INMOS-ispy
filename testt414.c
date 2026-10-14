@@ -34,6 +34,6 @@ int             testT414(LINK TheLink, struct tpstats * p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (FALSE);	/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST414A", p->tpid);
+	return load_failed(p);
     return (TRUE);
 }

@@ -181,14 +181,9 @@ void readC004(struct c4stats * q) {
 	if ((length == 1) && ((query[0] == 'a') || (query[0] == 'b'))) {
 		q->tptype = C4 + query[0] - 'a';
 	} else {
-		/*
-		 * C004A has no identification function, so the target may
-		 * return nothing or a value other than 'a'/'b'.  Keep the
-		 * revision parsed from the template rather than failing.
-		 */
-		fprintf(stderr,
-			"Warning - C004 %d did not report a revision, using %s\n",
-			q->tpid, tptostr(q->tptype));
+		/* The helper performs an A/B behavioural probe and must return a
+		 * single revision byte. An invalid reply cannot identify the chip. */
+		AbortExit(PROGRAM_NAME, "C004 %d returned an invalid revision reply", q->tpid);
 	}
 
 	/*
@@ -206,7 +201,7 @@ void readC004(struct c4stats * q) {
 
 	for (i = 0; i < C004_PORTS; i++) {
 		if (q->tptype == C4) {
-			/* C004a: always connected */
+			/* C004a: enquiry reports the remembered input selection. */
 			q->config[i] = (signed char)(raw[i] & 0x1F);
 		} else {
 			/* C004b: bit 7 indicates the output is connected */
@@ -458,12 +453,35 @@ getstats(struct tpstats *p) {
 	}
 }
 
-int checksum(struct tpstats * p, int link) {
-	while (p->parent != NULL) {
-		link = (link << 2) + p->route;
-		p = p->parent;
-	}
-	return (link);
+/* Keep complete routes: packing two bits per hop loses leading zero hops
+ * and overflows on long paths. There is no fixed limit on switch count. */
+struct c004reset {
+    struct c004reset *next;
+    int length;
+    unsigned char *path;
+};
+
+int firstc004reset(struct c004reset **seen, struct tpstats *p, int link)
+{
+    struct c004reset *record, *previous;
+    struct tpstats *node;
+    int length = 1, i = 1;
+    for (node = p; node->parent != NULL; node = node->parent) length++;
+    record = Malloc(sizeof(*record) + length);
+    record->length = length;
+    record->path = (unsigned char *)(record + 1);
+    record->path[0] = (unsigned char)link;
+    for (node = p; node->parent != NULL; node = node->parent)
+        record->path[i++] = (unsigned char)node->route;
+    for (previous = *seen; previous; previous = previous->next) {
+        if (previous->length == length && !memcmp(previous->path, record->path, length)) {
+            free(record);
+            return FALSE;
+        }
+    }
+    record->next = *seen;
+    *seen = record;
+    return TRUE;
 }
 
 int nextcandidate(struct tpstats ** child, struct tpstats ** parent)
@@ -555,7 +573,7 @@ void solve(struct tpstats * current, int length, unsigned char *buffer) {
 }
 
 void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
-    int             c004count = 0, c004s[100];
+    struct c004reset *resets = NULL;
     do {
         int i, success;
         struct tpstats * parent, * p;
@@ -785,36 +803,35 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
                 stop(p);
                 switch (bpw(p-> tptype)) {
                 case 2:
-                    load(TheLink, p,
+                    if (!load(TheLink, p,
                         c00416_code.CodeSize,
                         c00416_code.Offset,
                         c00416_code.WorkSpace,
                         c00416_code.VectorSpace,
                         c00416_code.BytesPerWord,
-                        c00416_code.Code);
+                        c00416_code.Code))
+                        AbortExit(PROGRAM_NAME, "Failed to load C004 helper on processor %d", p->tpid);
                     break;
                 case 4:
-                    load(TheLink, p,
+                    if (!load(TheLink, p,
                         c00432_code.CodeSize,
                         c00432_code.Offset,
                         c00432_code.WorkSpace,
                         c00432_code.VectorSpace,
                         c00432_code.BytesPerWord,
-                        c00432_code.Code);
+                        c00432_code.Code))
+                        AbortExit(PROGRAM_NAME, "Failed to load C004 helper on processor %d", p->tpid);
                     break;
                 }
                 sendid(p);
                 if (c4reset) {
                     int reset;
                     unsigned char command[2];
-                    int i, j, sum = 0;
+                    int i;
                     for (i = 0, reset = FALSE;
                         (!reset) && (i < 4); i++) {
                         if (p-> linkno[i] == C4) {
-                            sum = checksum(p, i);
-                            for (j = 0;
-                                (sum != c004s[j]) && (j < c004count); j++);
-                            if (j == c004count)
+                            if (firstc004reset(&resets, p, i))
                                 reset = TRUE;
                         }
                     }
@@ -825,8 +842,8 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
                         setroute(TheLink, p, 4); /* application */
                         command[1] = (unsigned char) i;
                         command[0] = '\4';
-                        sendiserver(TheLink, 2, command); /* reset */
-                        c004s[c004count++] = sum;
+                        if (!sendiserver(TheLink, 2, command))
+                            AbortExit(PROGRAM_NAME, "C004 reset failed on processor %d", p->tpid);
                         while (root->next != NULL) {
                             for (p = root;
                                 (p-> next != NULL) && (p-> next->next != NULL); p = p-> next);
@@ -847,6 +864,11 @@ void check(int subsys, int c4read, int c4reset, int information, int do_reset) {
             }
         } /* while */
     } while (c4reset);
+    while (resets != NULL) {
+        struct c004reset *next = resets->next;
+        free(resets);
+        resets = next;
+    }
 }
 
 /*
@@ -1223,11 +1245,6 @@ void            setC004(struct c4stats * p)
 {
     unsigned char   command[100];
     int             i, length;
-    setroute(TheLink, p->parent, 4);    /* application */
-    command[1] = (unsigned char) p->route;
-    command[0] = '\4';
-    if (!sendiserver(TheLink, 2, command))   /* reset */
-	AbortExit(PROGRAM_NAME, "C004 %d failed to reset", p->tpid);
     for (i = 0, length = 0; i < C004_PORTS; i++)
     {
 	int input = p->config[i];
@@ -1240,12 +1257,20 @@ void            setC004(struct c4stats * p)
 	command[length++] = (unsigned char) input;
 	command[length++] = (unsigned char) i;
     }
-    if (length > 0)
+    /* Validate the entire map before changing the switch. */
     {
-	tpboot(TheLink, (struct tpstats *) p);  /* raw mode */
-	if (!sendiserver(TheLink, length, command))  /* config */
-	    AbortExit(PROGRAM_NAME, "C004 %d failed to accept configuration", p->tpid);
+        unsigned char reset[2];
+        reset[0] = 4;
+        reset[1] = (unsigned char) p->route;
+        setroute(TheLink, p->parent, 4);    /* application */
+        if (!sendiserver(TheLink, 2, reset))
+            AbortExit(PROGRAM_NAME, "C004 %d failed to reset", p->tpid);
     }
+    /* The C004 requires configuration-complete after the connection sequence. */
+    command[length++] = 3;
+    tpboot(TheLink, (struct tpstats *) p);  /* raw mode */
+    if (!sendiserver(TheLink, length, command))
+        AbortExit(PROGRAM_NAME, "C004 %d failed to accept configuration", p->tpid);
 }
 /*}}}  */
 /*{{{  main */

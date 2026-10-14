@@ -47,7 +47,7 @@ char           *PROGRAM_NAME = "ftest";
 
 static int AnalyseFailure = FALSE;
 static int SelectedProcessor = -1;
-static int Skip801 = FALSE;
+static int SkipMicrocode = FALSE;
 static int ProbeLater = FALSE;
 static int ModernPart = 0;
 
@@ -67,12 +67,12 @@ void            Usage(void)
 {
                     fprintf(stdout, "\n%s  --  version %s of %s.\n", PROGRAM_NAME,
 			                    VERSION_NUMBER, VERSION_DATE);
-    fprintf(stdout, "\nUsage:  check | %s [%coption...]\n",
+    fprintf(stdout, "\nUsage:  ispy | %s [%coption...]\n",
 	    PROGRAM_NAME, SWITCHAR);
     fprintf(stdout, "Valid options are: \n");
     fprintf(stdout, "     %cT2        :  Test M212s, T2s, T225s only\n", SWITCHAR);
     fprintf(stdout, "     %cT4        :  Test T414s, T425s only\n", SWITCHAR);
-    fprintf(stdout, "     %cT8        :  Test T800s only\n", SWITCHAR);
+    fprintf(stdout, "     %cT8        :  Test T800s, T801s, T805s only\n", SWITCHAR);
     fprintf(stdout, "     %cL         :  Log progress of testing\n", SWITCHAR);
     fprintf(stdout, "     %cA         :  Analyse a stopped 32-bit root after a transport failure\n", SWITCHAR);
     fprintf(stdout, "     %cN number  :  Test only this processor; retain other routers\n", SWITCHAR);
@@ -295,7 +295,7 @@ void            getparams(int argc, char *argv[],
 		break;
             case 's':
             case 'S':
-                Skip801 = TRUE;
+                SkipMicrocode = TRUE;
                 break;
             case 'p':
             case 'P':
@@ -325,7 +325,7 @@ void            getparams(int argc, char *argv[],
                     if (argc < 2 || argv[1][0] == '\0')
                         AbortExit(PROGRAM_NAME, "Missing processor number for -n");
                     number = strtol(argv[1], &end, 10);
-                    if (*end != '\0' || number < 0 || number > 32767)
+                    if (end == argv[1] || *end != '\0' || number < 0 || number > 32767)
                         AbortExit(PROGRAM_NAME, "Invalid processor number for -n");
                     SelectedProcessor = (int) number;
                     ++argv;
@@ -353,7 +353,7 @@ void            getparams(int argc, char *argv[],
 
     if ((*testT2s == FALSE) && (*testT4s == FALSE) && (*testT8s == FALSE))
 	*testT2s = *testT4s = *testT8s = TRUE;
-    if ((ProbeLater && (Skip801 || ModernPart)) || (Skip801 && ModernPart))
+    if ((ProbeLater && (SkipMicrocode || ModernPart)) || (SkipMicrocode && ModernPart))
         AbortExit(PROGRAM_NAME, "Use only one of -p, -s or -d");
 }
 /*}}}  */
@@ -364,7 +364,17 @@ static void skip_chip(struct tpstats *p, const char *name)
     fprintf(stderr, "# Processor %d: SKIP %s (reduced coverage)\n", p->tpid, name);
 }
 
-static void restore_router(LINK link, struct tpstats *p)
+int load_failed(struct tpstats *p)
+{
+    struct testinfo *q = (struct testinfo *) p->extra;
+    q->error = TRUE;
+    q->tested = TRUE;
+    strncat(q->errors, ",LOAD ERROR", sizeof(q->errors) - strlen(q->errors) - 1);
+    fprintf(stderr, "# Processor %d: %s: LOAD ERROR\n", p->tpid, q->stage);
+    return FALSE;
+}
+
+static int restore_router(LINK link, struct tpstats *p)
 {
     struct testinfo *q = (struct testinfo *) p->extra;
     int loaded;
@@ -380,7 +390,8 @@ static void restore_router(LINK link, struct tpstats *p)
                       route32_code.BytesPerWord, route32_code.Code);
     }
     if (!loaded)
-        AbortExit(PROGRAM_NAME, "Failed to restore router on processor %d", p->tpid);
+        return load_failed(p);
+    return TRUE;
 }
 
 /*{{{  main(argc, argv)*/
@@ -431,6 +442,19 @@ int             main(int argc, char *argv[])
 	q = (struct testinfo *) p->extra;
 	if (SelectedProcessor >= 0 && p->tpid != SelectedProcessor)
 	    continue;
+        switch (class(p->tptype)) {
+            case T_212: case M212: case T_225:
+                if (!testT2s) continue;
+                break;
+            case T_414: case T_425:
+                if (!testT4s) continue;
+                break;
+            case T_800: case T_801: case T_805:
+                if (!testT8s) continue;
+                break;
+            default:
+                continue;
+        }
         if (ProbeLater) {
             if (!later_supported(p->tptype)) {
                 skip_chip(p, "priority/timer probe: unsupported revision");
@@ -440,7 +464,8 @@ int             main(int argc, char *argv[])
             if (!testLater(TheLink, p, logging, -1))
                 goto transport_failed;
             q->skipped = "full diagnostic suite (probe-only run)";
-            restore_router(TheLink, p);
+            if (!restore_router(TheLink, p))
+                goto transport_failed;
             continue;
         }
         if (ModernPart && !later_supported(p->tptype)) {
@@ -457,7 +482,8 @@ int             main(int argc, char *argv[])
 		    stop(p);
 		    if (!testT2(TheLink, p, logging))
 			goto transport_failed;
-                    restore_router(TheLink, p);
+                    if (!restore_router(TheLink, p))
+                        goto transport_failed;
 		}
 		break;
 	    case T_414:
@@ -466,9 +492,12 @@ int             main(int argc, char *argv[])
 		    stop(p);
 		    if (!testT32(TheLink, p, logging))
 			goto transport_failed;
-		    if (!testT414(TheLink, p, logging))
-			goto transport_failed;
-                    restore_router(TheLink, p);
+                    if (SkipMicrocode)
+                        skip_chip(p, "TEST414A");
+                    else if (!testT414(TheLink, p, logging))
+                        goto transport_failed;
+                    if (!restore_router(TheLink, p))
+                        goto transport_failed;
 		}
 		break;
 	    case T_800:
@@ -479,14 +508,15 @@ int             main(int argc, char *argv[])
 			goto transport_failed;
 		    if (!testT80x(TheLink, p, logging))
 			goto transport_failed;
-                    if (Skip801)
+                    if (SkipMicrocode)
                         skip_chip(p, "TEST800A");
                     else if (p->tptype == T800C || p->tptype == T800D) {
                         if (!testT800(TheLink, p, logging))
                             goto transport_failed;
                     } else
                         skip_chip(p, "T800 microcode tests: unsupported revision");
-                    restore_router(TheLink, p);
+                    if (!restore_router(TheLink, p))
+                        goto transport_failed;
 		}
 		break;
 	    case T_425:
@@ -495,7 +525,7 @@ int             main(int argc, char *argv[])
 		    stop(p);
 		    if (!testT32(TheLink, p, logging))
 			goto transport_failed;
-                    if (Skip801)
+                    if (SkipMicrocode)
                         skip_chip(p, "T425 microcode tests");
                     else if (later_supported(p->tptype)) {
                         if (!testLater(TheLink, p, logging, ModernPart))
@@ -506,7 +536,8 @@ int             main(int argc, char *argv[])
                             goto transport_failed;
                     } else
                         skip_chip(p, "T425 microcode tests: unsupported revision");
-                    restore_router(TheLink, p);
+                    if (!restore_router(TheLink, p))
+                        goto transport_failed;
 		}
 		break;
 	    case T_801:
@@ -518,7 +549,7 @@ int             main(int argc, char *argv[])
 			goto transport_failed;
 		    if (!testT80x(TheLink, p, logging))
 			goto transport_failed;
-                    if (Skip801) {
+                    if (SkipMicrocode) {
                         skip_chip(p, "T801/T805 microcode tests");
                     } else if (later_supported(p->tptype)) {
                         if (!testLater(TheLink, p, logging, ModernPart))
@@ -526,7 +557,8 @@ int             main(int argc, char *argv[])
                         if (ModernPart) q->skipped = "other three microcode subtests";
                     } else
                         skip_chip(p, "T801/T805 microcode tests: unsupported revision");
-                    restore_router(TheLink, p);
+                    if (!restore_router(TheLink, p))
+                        goto transport_failed;
 		}
 		break;
 	}

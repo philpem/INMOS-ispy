@@ -20,14 +20,15 @@ RM              = rm
 OCCAM		= oc -y -a -n -k -v -e -w -h -T
 FIND            = grep
 
-.PHONY: all clean occam test-host
+.PHONY: all clean occam check test-host
 
 all:     ispy$(E) mtest$(E) ftest$(E)
 
 FTESTOBJS = ftest$(O) testt2$(O) testt32$(O) testt414$(O) testt425$(O) \
-	    testt80x$(O) testt800$(O) testt801$(O) testlater$(O)
+            testt80x$(O) testt800$(O) testt801$(O) testlater$(O)
 
-test-host:
+# Host regressions use checked-in blobs, without DOSBox or hardware.
+check test-host:
 		python3 -m unittest discover -s tests -v
 
 TESTSRCS=test2.occ test414.occ test425.occ test80x.occ test800.occ test801.occ
@@ -48,11 +49,17 @@ clean:
 #
 #  Compiles occam/*.occ with the original INMOS D7305 toolset under DOSBox and
 #  regenerates type16.h/type32.h/... with tools/tco2h.py.  The toolset archive
-#  is downloaded on demand (see tools/fetch-toolchain.sh).  Ordinary host
-#  builds use the checked-in headers; run "make occam" to regenerate them.
+#  is downloaded on demand (see tools/fetch-toolchain.sh). Ordinary builds use
+#  the checked-in headers. Request `make occam all` to regenerate and relink.
 #
 
 occam: .occam.stamp
+
+# If regeneration and host targets are requested together, wait for the new
+# headers before deciding whether the embedding objects need recompilation.
+ifneq ($(filter occam,$(MAKECMDGOALS)),)
+check$(O) mtest$(O) $(FTESTOBJS): .occam.stamp
+endif
 
 .occam.stamp: $(wildcard occam/*.occ) tools/occam-build.sh tools/tco2h.py tools/fetch-toolchain.sh
 		tools/occam-build.sh $(CURDIR)
@@ -137,7 +144,7 @@ screen$(O):     screen.c screen.h
 #  support routines
 #
 
-cklib$(O):      cklib.c cklib.h checklib.h
+cklib$(O):      cklib.c cklib.h checklib.h boot.h
 		$(CC) -o cklib$(O) cklib.c
 
 hostend$(O):    hostend.c inmos.h \

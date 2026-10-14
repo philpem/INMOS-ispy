@@ -2,20 +2,26 @@
 
 A slightly updated version of the old INMOS Transputer `ispy`, `mtest`, and
 `ftest` tools for configuration and diagnostics of INMOS Transputer hardware.
-The current host build runs on Linux; the intended additional host is an
-Acorn A5000 running RISC OS 3.1 and Acorn C 5.
+Host builds support Linux and an Acorn A5000 running RISC OS 3.1
+with Acorn C 5.
 
 This set of tools has been modified slightly from the last release by  Andy Rabagliati (http://www.wizzy.com/wizzy/ispy.html), in order to work with modern versions of GCC and the updated kernel driver on Linux 3.x.x as available in my other repository (https://github.com/megatron-uk/INMOS-Link-Driver).
 
-## Useage
+## Usage
 
-Should build cleanly with GNU make and any modern version of GCC.
+Build the host tools with GNU make and GCC:
 
-ispy and mtest work as previous - anyone who is used to the old versions should find no substantial changes in behaviour. Most modifications are limited to code formatting and header file locations.
+```sh
+make
+```
 
-`make` builds all three host programs using the checked-in target payloads.
-DOSBox and the INMOS occam toolset are only needed when you explicitly
-regenerate those payloads with `make occam`.
+This builds all three host programs using the checked-in target-code
+headers. DOSBox and the Occam toolchain are needed only when you explicitly
+regenerate those headers with `make occam`.
+
+The tools retain their historical discovery and diagnostic interfaces. C004
+configuration and template handling have correctness fixes; see
+[C004 validation](docs/c004-validation.md) for compatibility details.
 
 FTEST was recovered from the
 [WoTUG INMOS archive](https://wotug.org/parallel/vendors/inmos/archive-server/).
@@ -51,7 +57,8 @@ FTEST contains tests for M212/T2/T225, T414, T425, T800, T801, and T805.
 Chip microcode tests are selected by silicon revision. T801B and T805D/G
 use the replacement TEST85 payloads; T425B/C use TEST45. The recovered
 TEST425A remains selected for T425A and TEST800A for T800C/D. Unknown
-revisions run common tests and report omitted chip diagnostics. Full target
+T425, T800, T801 and T805 revisions run common tests and report omitted
+chip diagnostics. Legacy T2 and T414 selection is retained from FTEST. Full target
 diagnostic coverage remains to be validated. Use `ftest -l` to report each
 target payload and its subtest results on stderr. A transport or protocol
 failure stops testing and prints partial results, with remaining processors
@@ -63,6 +70,22 @@ layout apart from `lddevid`, which these tests do not exercise. The
 [microcode reference](https://www.transputer.net/iset/iset.asp) also identifies
 T425B/C as a shared layout apart from `lddevid`. Unlisted later revisions
 are not assumed compatible.
+
+| CPU microcode family | Selected chip diagnostic |
+|----------------------|--------------------------|
+| T425A | Recovered TEST425A |
+| T425B/C | Replacement TEST45 payloads |
+| T800C/D | Recovered TEST800A |
+| T801B, T805D/G | Replacement TEST85 payloads |
+
+Chip revision letters are local to each product, not a common microcode
+version sequence. Matching instruction behaviour does not establish matching
+internal microstep addresses: closely related microprograms can have different
+ROM layouts. T400B is not assumed compatible with the T425 address maps.
+CPU and FPU compatibility must also be considered separately: T800C/D share
+CPU microcode, but three FPU words differ. T800D, T801B and T805D/G share FPU
+microcode. These ROM relationships do not prove identical physical cores or
+hardware timing.
 
 Use `ftest -n 1` to test only processor 1 through the existing routers.
 The recovered TEST801A uses incompatible absolute microcode addresses on
@@ -94,6 +117,13 @@ graphs. It covers named operations and symbolic `STEP` instructions. Use
 `--write-includes` to regenerate the named constants after a successful
 audit, then `make occam` to rebuild checked-in payload headers. ROM dumps
 are not required by ordinary host builds.
+
+The replacement TEST85/TEST45 and probe headers reproduce with the recovered
+Occam compiler. Legacy FTEST and router headers retain the recovered binaries
+built with Occam 2.00.04; rebuilding them with the recovered 2.02.10 compiler
+changes code and workspace allocation. Validate regenerated legacy payloads
+on hardware before relying on their results.
+
 
 For a 32-bit root that stops responding, `ftest -l -a` attempts an Analyse
 snapshot after the failed read. It uses the recovered CKMON bootstrap to
@@ -209,13 +239,28 @@ DOS toolset under DOSBox, runs `ilist /C`, and regenerates the headers with
 tools/occam-build.sh build/occam
 ```
 
+To regenerate the repository headers and rebuild all three host tools in one command:
+
+```sh
+make occam all
+```
+
 It needs `dosbox`, `unzip` and `python3`, plus the D7305 toolset archive at
 `tools/inmos/d7305a.zip` (not distributed here; see `.gitignore`). The D7x05
 archives are from
 <http://transputer.classiccmp.org/software/languages/occam/compilers/inmos/commercial/>.
 
 The generated headers for `type16/32`, `check16/32` and `mtest16/32` are
-byte-for-byte identical to the blobs in the released 3.23 binaries.
+byte-for-byte identical to the blobs in the released 3.23 binaries. The C004
+helpers are rebuilt from recovered monitor sources with protocol fixes.
+[Header validation and CHECK payload selection](docs/occam-header-validation.md)
+records the differences from the older repository headers and explains why the
+regenerated CHECK headers are retained.
+
+Run `make check` (or `make test-host`) for host-build, disassembler, FTEST,
+Acorn export and hardware-free C004 regression checks. See
+[C004 validation](docs/c004-validation.md) for coverage, remaining integration
+checks and the correction to directed connections in long-format templates.
 
 ## Notes
 

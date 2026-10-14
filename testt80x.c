@@ -37,7 +37,7 @@ int            testT80x(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (FALSE);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST80XA", p->tpid);
+	return load_failed(p);
     q->stage = "TEST80XB";
     if (load(TheLink, p,
 	     test80xb_code.CodeSize,
@@ -51,7 +51,7 @@ int            testT80x(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (FALSE);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST80XB", p->tpid);
+	return load_failed(p);
     q->stage = "TEST80XC";
     if (load(TheLink, p,
 	     test80xc_code.CodeSize,
@@ -65,7 +65,7 @@ int            testT80x(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (FALSE);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST80XC", p->tpid);
+	return load_failed(p);
     q->stage = "TEST80XD";
     if (load(TheLink, p,
 	     test80xd_code.CodeSize,
@@ -79,6 +79,6 @@ int            testT80x(LINK TheLink, struct tpstats *p, char logging)
 	if (!getresult(TheLink, p, logging))
 	    return (FALSE);		/* give up on this one */
     } else
-	AbortExit(PROGRAM_NAME, "Failed to load Transputer %d - TEST80XD", p->tpid);
+	return load_failed(p);
     return(TRUE);
 }

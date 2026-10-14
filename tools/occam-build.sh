@@ -66,8 +66,12 @@ echo "==> generating build batch (${#bases[@]} sources)"
             test80x*|test800a|test801a|test85*|probe85) target=T8 ;;
             *) target=TA ;;
         esac
-        printf 'oc %s.occ /Y /A /N /K /V /E /W /H /%s /O %s.tco\r\n' \
-               "$base" "$target" "$base"
+        # Released C004 helpers also disabled run-time error checking. Keep
+        # that mode for their small router/monitor code; other blobs use /H.
+        unchecked=
+        case "$base" in c00416|c00432) unchecked=/U ;; esac
+        printf 'oc %s.occ /Y /A /N /K /V /E /W /H %s /%s /O %s.tco > %s.log\r\n' \
+               "$base" "$unchecked" "$target" "$base" "$base"
         printf 'ilist /C %s.tco > %s.lst\r\n' "$base" "$base"
     done
     printf 'dir *.tco\r\n'
@@ -83,6 +87,9 @@ for base in "${bases[@]}"; do
     matches=("$work"/dos/WORK/"$base".tco "$work"/dos/WORK/"${base^^}".TCO)
     if [ ! -e "${matches[0]}" ] && [ ! -e "${matches[1]}" ]; then
         echo "error: $base did not compile" >&2
+        for log in "$work/dos/WORK/$base.log" "$work/dos/WORK/${base^^}.LOG"; do
+            [ ! -f "$log" ] || cat "$log" >&2
+        done
         exit 1
     fi
 done
