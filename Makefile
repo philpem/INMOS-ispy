@@ -20,9 +20,13 @@ RM              = rm
 OCCAM		= oc -y -a -n -k -v -e -w -h -T
 FIND            = grep
 
-.PHONY: all clean occam
+.PHONY: all clean occam check
 
-all:     ispy$(E) mtest$(E) occam
+all:     ispy$(E) mtest$(E)
+
+# Host regressions use the checked-in blobs, without requiring DOSBox/hardware.
+check:
+		python3 -m unittest discover -s tests -p 'test_*.py'
 
 TESTSRCS=test2.occ test414.occ test425.occ test80x.occ test800.occ test801.occ
 TESTHSRCS=test2.h test414.h test425.h test32.h test80x.h test800.h test801.h
@@ -42,11 +46,17 @@ clean:
 #
 #  Compiles occam/*.occ with the original INMOS D7305 toolset under DOSBox and
 #  regenerates type16.h/type32.h/... with tools/tco2h.py.  The toolset archive
-#  is downloaded on demand (see tools/fetch-toolchain.sh).  Run "make ispy" or
-#  "make mtest" to skip this step.
+#  is downloaded on demand (see tools/fetch-toolchain.sh). Ordinary builds use
+#  the checked-in headers. Request `make occam all` to regenerate and relink.
 #
 
 occam: .occam.stamp
+
+# If regeneration and host targets are requested together, wait for the new
+# headers before deciding whether the embedding objects need recompilation.
+ifneq ($(filter occam,$(MAKECMDGOALS)),)
+check$(O) mtest$(O): .occam.stamp
+endif
 
 .occam.stamp: $(wildcard occam/*.occ) tools/occam-build.sh tools/tco2h.py tools/fetch-toolchain.sh
 		tools/occam-build.sh $(CURDIR)
@@ -60,7 +70,7 @@ ispy$(E):      check$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o ispy$(E) check$(O) cklib$(O) $(LINKOBJS) $(LIBRARIES)
 
 check$(O):      check.c checklib.h inmos.h cklib.h \
-		type32.h type16.h check32.h check16.h c00416.h c00432.h iserver.h | occam
+		type32.h type16.h check32.h check16.h c00416.h c00432.h iserver.h
 		$(CC) -DDEFAULTLINK=$(DEFAULTLINK) -o check$(O) check.c
 
 
@@ -72,7 +82,7 @@ mtest$(E):      mtest$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o mtest$(E) mtest$(O) cklib$(O) $(LINKOBJS)
 
 mtest$(O):      mtest.c cklib.h inmos.h  \
-		mtest32.h mtest16.h checklib.h | occam
+		mtest32.h mtest16.h checklib.h
 		$(CC) -o mtest$(O) mtest.c
 
 
@@ -94,7 +104,7 @@ screen$(O):     screen.c screen.h
 #  support routines
 #
 
-cklib$(O):      cklib.c cklib.h checklib.h
+cklib$(O):      cklib.c cklib.h checklib.h boot.h
 		$(CC) -o cklib$(O) cklib.c
 
 hostend$(O):    hostend.c inmos.h \
