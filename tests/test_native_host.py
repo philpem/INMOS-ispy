@@ -57,7 +57,7 @@ class NativeExport(unittest.TestCase):
             visit('all')
             self.assertEqual({name for name in visited if name.startswith('@.c.')},
                              {'@.c.' + name for name in (
-                                 'check', 'cklib', 'mtest', 'ftest', 'ro_link',
+                                 'check', 'cklib', 'mtest', 'ftest', 'ro_link', 'ltest', 'netcfg',
                                  'testt2', 'testt32', 'testt414', 'testt425',
                                  'testt80x', 'testt800', 'testt801', 'testlater')})
             self.assertIn('@.s.tmblink', visited)

@@ -1,0 +1,190 @@
+-- Shared link diagnostic and packet router. Original protocol implementation.
+-- Low-priority timer ticks are 64 microseconds. Sparse worker storage allows T2.
+PROC linkworker(VAL INT bootchan)
+  CHAN OF ANY out0, out1, out2, out3 :
+  PLACE out0 AT 0 :
+  PLACE out1 AT 1 :
+  PLACE out2 AT 2 :
+  PLACE out3 AT 3 :
+  [4]CHAN OF ANY outputs IS [out0, out1, out2, out3] :
+  CHAN OF ANY in0, in1, in2, in3 :
+  PLACE in0 AT 4 :
+  PLACE in1 AT 5 :
+  PLACE in2 AT 6 :
+  PLACE in3 AT 7 :
+  [4]CHAN OF ANY inputs IS [in0, in1, in2, in3] :
+  CHAN OF ANY command IS inputs[bootchan] :
+  CHAN OF ANY reply IS outputs[bootchan] :
+  PROC relay(CHAN OF ANY source, dest, VAL INT length, VAL BOOL framed)
+    [64]BYTE buffer :
+    INT left, n :
+    SEQ
+      IF
+        framed
+          dest ! (INT16 length)
+        TRUE
+          SKIP
+      left := length
+      WHILE left > 0
+        SEQ
+          n := left
+          IF
+            n > 64
+              n := 64
+            TRUE
+              SKIP
+          source ? [buffer FROM 0 FOR n]
+          dest ! [buffer FROM 0 FOR n]
+          left := left - n
+  :
+  PROC pattern([]BYTE data, VAL INT round, direction)
+    SEQ i = 0 FOR SIZE data
+      data[i] := BYTE (((i + ((round /\ 255) * 17)) + direction) /\ 255)
+  :
+  PROC verify(VAL []BYTE data, VAL INT round, direction, INT errors)
+    SEQ i = 0 FOR SIZE data
+      IF
+        data[i] <> (BYTE (((i + ((round /\ 255) * 17)) + direction) /\ 255))
+          errors := errors PLUS 1
+        TRUE
+          SKIP
+  :
+  PROC putword([]BYTE result, VAL INT value)
+    SEQ
+      result[0] := BYTE (value /\ 255)
+      result[1] := BYTE ((value >> 8) /\ 255)
+  :
+  PROC checksum(VAL []BYTE data, INT crc)
+    SEQ
+      crc := -1
+      SEQ i = 0 FOR SIZE data
+        SEQ
+          crc := crc >< ((INT data[i]) << 8)
+          SEQ bit = 0 FOR 8
+            IF
+              (crc /\ (1 << 15)) <> 0
+                crc := (crc << 1) >< #1021
+              TRUE
+                crc := crc << 1
+  :
+  PROC measure(VAL []BYTE config)
+    VAL mode IS INT config[0] :
+    VAL port IS INT config[1] :
+    VAL rounds IS (INT config[2]) + ((INT config[3]) << 8) :
+    VAL n IS INT config[4] :
+    CHAN OF ANY peer.in IS inputs[port] :
+    CHAN OF ANY peer.out IS outputs[port] :
+    [64]BYTE buffer :
+    [14]BYTE stats :
+    TIMER clock :
+    INT start, finish, errors, ticks, crc :
+    SEQ
+      stats := [0(BYTE),0(BYTE),0(BYTE),0(BYTE),
+                0(BYTE),0(BYTE),0(BYTE),0(BYTE),
+                0(BYTE),0(BYTE),0(BYTE),0(BYTE),0(BYTE),0(BYTE)]
+      errors := 0
+      IF
+        (rounds < 1) OR (rounds > 256) OR ((n <> 1) AND (n <> 64)) OR (port > 3)
+          reply ! 0(INT16)
+        mode = 1
+          SEQ
+            -- READY is fully routed before the peer can start sending.
+            reply ! 1(INT16); 1(BYTE)
+            clock ? start
+            SEQ round = 0 FOR rounds
+              SEQ
+                peer.in ? [buffer FROM 0 FOR n]
+                verify([buffer FROM 0 FOR n], round, 0, errors)
+                pattern([buffer FROM 0 FOR n], round, 113)
+                peer.out ! [buffer FROM 0 FOR n]
+            clock ? finish
+            ticks := finish MINUS start
+            putword([stats FROM 0 FOR 2], errors)
+            putword([stats FROM 2 FOR 2], errors >< (-1))
+            peer.out ! [stats FROM 0 FOR 4]
+        mode = 2
+          SEQ
+            clock ? start
+            SEQ round = 0 FOR rounds
+              SEQ
+                pattern([buffer FROM 0 FOR n], round, 0)
+                peer.out ! [buffer FROM 0 FOR n]
+                peer.in ? [buffer FROM 0 FOR n]
+                verify([buffer FROM 0 FOR n], round, 113, errors)
+            clock ? finish
+            ticks := finish MINUS start
+            peer.in ? [stats FROM 0 FOR 4]
+            putword([stats FROM 4 FOR 2], errors)
+            putword([stats FROM 6 FOR 2], ticks)
+            stats[8] := BYTE (rounds /\ 255)
+            stats[9] := BYTE ((rounds >> 8) /\ 255)
+            stats[10] := BYTE n
+            stats[11] := 2(BYTE)
+            checksum([stats FROM 0 FOR 12], crc)
+            putword([stats FROM 12 FOR 2], crc)
+            reply ! 14(INT16); stats
+        TRUE
+          reply ! 0(INT16)
+  :
+  INT selected :
+  BOOL booting, running, final.parent :
+  INT16 wire.length :
+  INT length :
+  BYTE tag, hop :
+  SEQ
+    selected := 4
+    booting := FALSE
+    final.parent := TRUE
+    running := TRUE
+    WHILE running
+      ALT
+        command ? wire.length
+          SEQ
+            length := INT wire.length
+            IF
+              wire.length = ESCAPE
+                SEQ
+                  command ? tag
+                  IF
+                    tag = TAG.SETPATH
+                      SEQ
+                        command ? wire.length; hop
+                        length := (INT wire.length) - 1
+                        selected := INT hop
+                        booting := FALSE
+                        final.parent := length = 0
+                        IF
+                          (length = 0) AND (hop = TAG.HALT)
+                            SEQ
+                              ASM
+                                OPR #1FF
+                          length > 0
+                            SEQ
+                              outputs[selected] ! ESCAPE; TAG.SETPATH
+                              relay(command, outputs[selected], length, TRUE)
+                          TRUE
+                            SKIP
+                    (selected < 4) AND (NOT final.parent)
+                      outputs[selected] ! ESCAPE; tag
+                    (selected < 4) AND (tag = TAG.BOOT)
+                      booting := TRUE
+                    TRUE
+                      SKIP
+              selected = 4
+                [8]BYTE config :
+                SEQ
+                  IF
+                    length = 8
+                      SEQ
+                        command ? config
+                        measure(config)
+                    TRUE
+                      running := FALSE
+              (selected >= 0) AND (selected < 4)
+                relay(command, outputs[selected], length, NOT booting)
+              TRUE
+                running := FALSE
+        ALT i = 0 FOR 4
+          (selected = i) & inputs[i] ? wire.length
+            relay(inputs[i], reply, INT wire.length, TRUE)
+:

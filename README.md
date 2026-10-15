@@ -15,7 +15,7 @@ Build the host tools with GNU make and GCC:
 make
 ```
 
-This builds all three host programs using the checked-in target-code
+This builds all five host programs using the checked-in target-code
 headers. DOSBox and the Occam toolchain are needed only when you explicitly
 regenerate those headers with `make occam`.
 
@@ -48,6 +48,12 @@ A pipe is optional. You can save the map and use it immediately afterwards:
 ./ispy > network.txt
 ./ftest < network.txt
 ```
+
+`mtest -z` adds sparse memory sizing, `ltest` checks processor links in both
+directions and measures round-trip timing, and `netcfg` exports INMOS C,
+occam and C004 switch descriptions. MTEST and FTEST remain separate programs.
+See [network diagnostics and exports](docs/network-diagnostics.md) for commands,
+coverage, timing limits and the hardware validation still required.
 
 The saved map describes the live network ISpy prepared. Resetting the
 processors, changing the topology, or replacing their routing programs
@@ -155,7 +161,7 @@ the assembler uses its `OSLibInclude:` headers. Neither requires a Wimp
 window or event loop.
 
 After transferring the export, select its directory on RISC OS and run
-Acorn `amu`. This builds `ispy`, `mtest`, and `ftest` with `cc`, `objasm`,
+Acorn `amu`. This builds `ispy`, `mtest`, `ftest`, `ltest`, and `netcfg` with `cc`, `objasm`,
 and `link`. Set `C:`, `OSLib:`, and `OSLibInclude:` for your installed
 compiler and libraries. The Makefile selects 26-bit APCS to match the
 TMB assembly on RISC OS 3.1 and uses the checked-in transputer payloads.
@@ -168,8 +174,8 @@ host. MTEST and FTEST continue to read their network descriptions from
 stdin. The RISC OS default link name is `TMB`; the supplied driver scans
 for a supported podule and ignores this name.
 
-The diagnostic C sources pass C90 syntax checks on the Unix host. All three
-programs have compiled and linked with Norcroft C 5.09 on RISC OS, and
+The diagnostic C sources pass C90 syntax checks on the Unix host. ISPY, MTEST and FTEST
+have compiled and linked with Norcroft C 5.09 on RISC OS, and
 ISpy has discovered a network of two T805G processors. Both pass all 18
 FTEST subtests: the 14 common integer and floating-point tests and the
 replacement Conditional Mux, Stack drivers, Constants and Incrementer tests.
@@ -239,7 +245,7 @@ DOS toolset under DOSBox, runs `ilist /C`, and regenerates the headers with
 tools/occam-build.sh build/occam
 ```
 
-To regenerate the repository headers and rebuild all three host tools in one command:
+To regenerate the repository headers and rebuild all five host tools in one command:
 
 ```sh
 make occam all

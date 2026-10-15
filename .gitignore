@@ -2,6 +2,8 @@
 ispy
 mtest
 ftest
+netcfg
+ltest
 
 # Generated occam code-blob headers and build scratch
 build/
