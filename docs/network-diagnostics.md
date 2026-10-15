@@ -55,38 +55,60 @@ partial results and return failure. A run which tests no processors also
 returns failure. The default exclusion of T2 processors attached to C004
 configuration links still applies; `-c` includes them.
 
-## Link quality and latency
+## Link integrity, latency and throughput
 
 `ltest` loads a small router and worker on each processor, then tests each
 processor-to-processor connection once, including connections outside the
 boot tree. For each connection it runs:
 
 1. One-byte exchanges for mean round-trip latency.
-2. Exchanges of 64-byte patterns for directional corruption counts and
-   round-trip goodput.
+2. Exchanges of 64-byte patterns for directional corruption counts and mean
+   exchange time.
+3. A stream of prepared 64-byte blocks in each direction for separate
+   one-way throughput measurements.
 
-The default is 128 exchanges in each phase. `-n 1` through `-n 256` select the
-count. `-f snapshot` selects a saved map; otherwise the map comes from stdin.
+The default is 128 exchanges in each integrity/latency phase. `-n 1` through
+`-n 256` select the exchange count and sixteen times that many bulk blocks
+per direction. `-f snapshot` selects a saved map; otherwise the map comes from
+stdin.
 Patterns vary with the exchange number, position and direction. Errors count
 mismatching bytes, not individual bits. Counts follow the endpoint order
 printed on that result line.
 
-The receiver is prepared first and acknowledges readiness through the routing
-network. The initiator has an equal or shorter route, so preparing it does not
-require forwarding through the suspended receiver. During measurement the
-workers own the physical ports directly, then resume routing. This avoids
+The deeper endpoint is prepared first and acknowledges readiness through the
+routing network. The initiator has an equal or shorter route, so preparing it
+does not require forwarding through the suspended endpoint. During measurement
+the workers own the physical ports directly, then resume routing. This avoids
 measuring the whole host-to-processor path as though it were one physical link.
 The receiver sends its error count and its complement. The routed result packet
 has a CRC-16/CCITT-FALSE checksum, which the host validates along with packet
-length, exchange count, block size and role.
+length, exchange count, block size and phase. During bulk transfers the
+receiver sends the complete CRC-protected result to the sender. The initiator
+forwards this packet unchanged, so the CRC protects remotely measured timing
+as well as error counts.
 
-Timing comes from the initiator's low-priority timer, in 64 microsecond ticks.
-It includes pattern generation, comparison, worker overhead and the return
-trip. Goodput is the total payload in both directions divided by that duration;
-it is not a measurement of the raw serial line rate. Zero ticks are reported
-as below timer resolution. The packet carries the low 16 timer bits; when the
-host observes a run of four seconds or more, it suppresses timing because a
-wrap could make it misleading.
+Latency and integrity exchange time come from the initiator's low-priority
+timer, in 64 microsecond ticks. They include pattern generation, comparison,
+worker overhead and the return trip. The integrity exchange time describes
+the checking workload; it is not converted into a link data rate.
+
+Bulk throughput uses a buffer prepared before streaming. The receiver accepts
+one warm-up block, starts its timer, then receives the remaining blocks without
+pattern generation, checking or per-block replies. It stops the timer before
+checking the final block and returning its report. MB/s is decimal bytes per
+second in the printed direction: `(16 * exchanges - 1) * 64 / elapsed time`.
+At the default count, 131008 bytes are timed in each direction. The measurement
+includes the loop and I/O instruction overhead between blocks. It excludes
+host setup, warm-up, result transfer and pattern processing; it does not
+measure simultaneous full-duplex bandwidth or the raw serial bit rate.
+
+Only the final bulk block is checked, reported as `final-block errors`; earlier
+bulk blocks are overwritten. Use the separate integrity phase's changing
+patterns and per-exchange checks to assess corruption across a transfer.
+Zero ticks are reported as below timer resolution. Bulk measurements shorter
+than sixteen ticks have no reported rate. The packet carries the low 16 timer
+bits; when the host observes a run of four seconds or more, it suppresses
+timing because a wrap could make it misleading.
 
 Corruption returns a non-zero exit status. A transfer or protocol failure stops
 further routing, preserves completed results and marks remaining connections
@@ -183,8 +205,8 @@ metadata; a second clean build reproduced all four headers exactly.
 |---------|------------|-----------------|---------------------------|
 | `size16` | 768 | 87 | 942 |
 | `size32` | 720 | 70 | 1000 |
-| `ltest16` | 930 | 94 | 1118 |
-| `ltest32` | 1056 | 73 | 1348 |
+| `ltest16` | 1170 | 102 | 1374 |
+| `ltest32` | 1276 | 81 | 1600 |
 
 To regenerate only these payloads:
 
@@ -202,10 +224,11 @@ processors, each with 4 MiB RAM, connected by two physical links:
 - `ltest` passed both phases on both links at 1, 128 and 256 exchanges,
   including the connection outside the discovery tree. All directional error
   counts were zero. The dedicated runs returned exit status 0.
-- At 128 and 256 exchanges, measured mean round-trip latency was
-  24.5–24.7 microseconds and round-trip goodput was 0.128 MB/s. These are
-  observations from this setup, including worker overhead; the timer scale
-  has not been checked against an independent instrument.
+- At 128 and 256 exchanges, the original worker measured mean round-trip
+  latency of 24.5–24.7 microseconds. Its former 0.128 MB/s figure included
+  pattern processing and was not a link-throughput measurement. That figure
+  has been replaced by exchange time and separate bulk-transfer rates. The
+  timer scale has not been checked against an independent instrument.
 - `mtest -z -e 4096` and the existing `mtest -q -e 4096` both reported
   `4096K|` for both processors and returned exit status 0. These runs reached
   the selected ceiling; they did not probe beyond the installed RAM to
@@ -220,6 +243,14 @@ processors, each with 4 MiB RAM, connected by two physical links:
   pair as `NOT COMPLETED (communication failure)` after a host read timeout,
   and returned exit status 1. A subsequent ISPY reset and rediscovery restored
   the actual two-link topology.
+
+The corrected throughput worker was then rebuilt with Norcroft C 5.09 with
+zero compiler errors. On the same setup, all four phases passed on both links
+at 1, 128 and 256 exchanges, with exit status 0. At 128 and 256 exchanges,
+one-way bulk throughput was 1.667–1.670 MB/s in each direction and integrity
+exchange time was 998.2–998.5 microseconds. At one exchange the bulk timing was
+correctly reported as too short for a rate. Both revised LTEST headers were
+reproduced byte-for-byte by a second clean D7305/TCO2H build.
 
 Physical cable-disconnection and corruption tests remain outstanding, as do
 execution of the 16-bit workers and C004 programming readback checks on real

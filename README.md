@@ -50,8 +50,8 @@ A pipe is optional. You can save the map and use it immediately afterwards:
 ```
 
 `mtest -z` adds sparse memory sizing, `ltest` checks processor links in both
-directions and measures round-trip timing, and `netcfg` exports INMOS C,
-occam and C004 switch descriptions. MTEST and FTEST remain separate programs.
+directions and measures latency and one-way bulk throughput. `netcfg` exports
+INMOS C, occam and C004 switch descriptions. MTEST and FTEST remain separate programs.
 See [network diagnostics and exports](docs/network-diagnostics.md) for commands,
 coverage, timing limits and the hardware validation still required.
 

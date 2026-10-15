@@ -27,14 +27,14 @@ class DiagnosticHost(unittest.TestCase):
     def test_tests_tree_and_non_tree_connections_in_both_directions(self):
         r = self.run_case('ltest')
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.count(' PASS'), 6)
+        self.assertEqual(r.stdout.count(' PASS'), 12)
         self.assertIn('PAIR 0:2 2:2', r.stderr)
         self.assertIn('PAIR 1:2 2:1', r.stderr)
         self.assertEqual(r.stderr.count('LOAD'), 3)
     def test_link_corruption_is_directional_and_fails(self):
         r = self.run_case('ltest', 'corrupt')
         self.assertEqual(r.returncode, 1)
-        self.assertEqual(r.stdout.count(' FAIL'), 6)
+        self.assertEqual(r.stdout.count(' FAIL'), 12)
         self.assertIn('errors 1/2', r.stdout)
     def test_link_failures_stop_routing_and_mark_remaining_links(self):
         for case in ('timeout', 'short', 'bad-ready', 'bad-checksum', 'bad-counter', 'route-fail', 'load-fail'):
@@ -81,3 +81,44 @@ class DiagnosticHost(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn('No processors tested', r.stderr)
         self.assertNotIn('LOAD', r.stderr)
+
+    def test_integrity_exchange_time_and_separate_directional_throughput(self):
+        r = self.run_case('ltest')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn('goodput', r.stdout)
+        self.assertIn('mean exchange time', r.stdout)
+        self.assertIn('node0.link[1] -> node1.link[1] throughput: 131008 timed bytes', r.stdout)
+        self.assertIn('node1.link[1] -> node0.link[1] throughput: 131008 timed bytes', r.stdout)
+        # Exactly one direction's bytes divided by 100 * 64 us, no doubling.
+        self.assertIn('20.470 MB/s', r.stdout)
+
+    def test_bulk_timing_below_sixteen_ticks_has_no_rate(self):
+        r = self.run_case('ltest', 'short-timing')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for line in r.stdout.splitlines():
+            if 'throughput:' in line:
+                self.assertIn('timing too short for throughput', line)
+                self.assertNotIn('MB/s', line)
+
+    def test_bulk_sample_error_count_is_bounded(self):
+        r = self.run_case('ltest', 'bulk-counter')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('invalid error counts', r.stdout)
+        self.assertIn('NOT TESTED', r.stdout)
+
+    def test_bulk_remote_checksum_and_direction_are_validated(self):
+        for case in ('bulk-crc', 'bulk-direction'):
+            with self.subTest(case=case):
+                r = self.run_case('ltest', case)
+                self.assertEqual(r.returncode, 1)
+                self.assertEqual(r.stdout.count(' PASS'), 2)
+                self.assertIn('NOT COMPLETED (invalid result)', r.stdout)
+                self.assertIn('NOT TESTED', r.stdout)
+
+    def test_bulk_timeout_keeps_completed_integrity_results(self):
+        r = self.run_case('ltest', 'bulk-timeout')
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.count(' PASS'), 2)
+        self.assertIn('throughput:', r.stdout)
+        self.assertIn('NOT COMPLETED (communication failure)', r.stdout)
+        self.assertIn('NOT TESTED', r.stdout)

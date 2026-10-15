@@ -10,7 +10,7 @@ class NativeLink(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         root = Path(cls.temp.name)
         (root/'oslib').mkdir()
-        (root/'oslib/os.h').write_text('void *xos_read_monotonic_time(int *);\n')
+        (root/'oslib/os.h').write_text('#define UNKNOWN 0\nvoid *xos_read_monotonic_time(int *);\n')
         cls.exe = root/'native'
         subprocess.run(['cc', '-std=c90', '-pedantic-errors', '-I', str(root),
                         str(ROOT/'tests/riscos_link.c'), '-o', str(cls.exe)], check=True)

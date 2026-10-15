@@ -67,17 +67,31 @@ PROC linkworker(VAL INT bootchan)
               TRUE
                 crc := crc << 1
   :
+  PROC finish.stats([]BYTE stats, VAL INT ticks, rounds, n, kind)
+    INT crc :
+    SEQ
+      putword([stats FROM 6 FOR 2], ticks)
+      stats[8] := BYTE (rounds /\ 255)
+      stats[9] := BYTE ((rounds >> 8) /\ 255)
+      stats[10] := BYTE n
+      stats[11] := BYTE kind
+      checksum([stats FROM 0 FOR 12], crc)
+      putword([stats FROM 12 FOR 2], crc)
+  :
   PROC measure(VAL []BYTE config)
     VAL mode IS INT config[0] :
     VAL port IS INT config[1] :
     VAL rounds IS (INT config[2]) + ((INT config[3]) << 8) :
     VAL n IS INT config[4] :
+    VAL bulk IS config[5] = 1(BYTE) :
+    VAL reverse IS config[6] = 1(BYTE) :
     CHAN OF ANY peer.in IS inputs[port] :
     CHAN OF ANY peer.out IS outputs[port] :
     [64]BYTE buffer :
     [14]BYTE stats :
     TIMER clock :
-    INT start, finish, errors, ticks, crc :
+    INT start, finish, errors, ticks :
+    BYTE token :
     SEQ
       stats := [0(BYTE),0(BYTE),0(BYTE),0(BYTE),
                 0(BYTE),0(BYTE),0(BYTE),0(BYTE),
@@ -86,6 +100,44 @@ PROC linkworker(VAL INT bootchan)
       IF
         (rounds < 1) OR (rounds > 256) OR ((n <> 1) AND (n <> 64)) OR (port > 3)
           reply ! 0(INT16)
+        bulk
+          SEQ
+            -- No pattern generation or comparison in the timed region.
+            pattern(buffer, 0, 0)
+            IF
+              mode = 1
+                SEQ
+                  reply ! 1(INT16); 1(BYTE)
+                  peer.in ? token
+              TRUE
+                peer.out ! 1(BYTE)
+            IF
+              ((mode = 1) AND (NOT reverse)) OR ((mode = 2) AND reverse)
+                SEQ
+                  -- First block absorbs startup and scheduling skew.
+                  peer.in ? buffer
+                  clock ? start
+                  SEQ block = 1 FOR ((rounds * 16) - 1)
+                    peer.in ? buffer
+                  clock ? finish
+                  ticks := finish MINUS start
+                  verify(buffer, 0, 0, errors)
+                  putword([stats FROM 0 FOR 2], errors)
+                  putword([stats FROM 2 FOR 2], errors >< (-1))
+                  finish.stats(stats, ticks, rounds, n,
+                               3 + (INT config[6]))
+                  -- Protect remote timing too; the sender relays this CRC.
+                  peer.out ! stats
+              TRUE
+                SEQ
+                  SEQ block = 0 FOR (rounds * 16)
+                    peer.out ! buffer
+                  peer.in ? stats
+            IF
+              mode = 2
+                reply ! 14(INT16); stats
+              TRUE
+                SKIP
         mode = 1
           SEQ
             -- READY is fully routed before the peer can start sending.
@@ -115,13 +167,7 @@ PROC linkworker(VAL INT bootchan)
             ticks := finish MINUS start
             peer.in ? [stats FROM 0 FOR 4]
             putword([stats FROM 4 FOR 2], errors)
-            putword([stats FROM 6 FOR 2], ticks)
-            stats[8] := BYTE (rounds /\ 255)
-            stats[9] := BYTE ((rounds >> 8) /\ 255)
-            stats[10] := BYTE n
-            stats[11] := 2(BYTE)
-            checksum([stats FROM 0 FOR 12], crc)
-            putword([stats FROM 12 FOR 2], crc)
+            finish.stats(stats, ticks, rounds, n, 2)
             reply ! 14(INT16); stats
         TRUE
           reply ! 0(INT16)

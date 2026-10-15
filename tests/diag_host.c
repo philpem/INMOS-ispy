@@ -122,23 +122,27 @@ int getiserver(LINK l, unsigned int *length, unsigned char *data, unsigned int m
         *length = 16;
     }
 #else
+    if (config[5] && config[0] == 2 && !strcmp(scenario(), "bulk-timeout")) return 0;
     if (config[0] == 1) {
         *length = 1; data[0] = !strcmp(scenario(), "bad-ready") ? 0 : 1;
     } else {
         unsigned int crc = 65535U, i, bit;
         *length = !strcmp(scenario(), "short") ? 13 : 14;
         data[0] = !strcmp(scenario(), "corrupt") ? 1 : 0;
+        if (config[5] && !strcmp(scenario(), "bulk-counter")) data[0] = 65;
         data[2] = (unsigned char)~data[0]; data[3] = 255;
-        data[4] = !strcmp(scenario(), "corrupt") ? 2 : 0;
-        data[6] = 100;
-        data[8] = config[2]; data[9] = config[3]; data[10] = config[4]; data[11] = 2;
+        data[4] = !config[5] && !strcmp(scenario(), "corrupt") ? 2 : 0;
+        data[6] = !strcmp(scenario(), "short-timing") ? 15 : 100;
+        data[8] = config[2]; data[9] = config[3]; data[10] = config[4]; data[11] = config[5] ? 3 + config[6] : 2;
+        if (config[5] && !strcmp(scenario(), "bulk-direction")) data[11] = config[6] ? 3 : 4;
         for (i = 0; i < 12; i++) {
             crc ^= (unsigned int)data[i] << 8;
             for (bit = 0; bit < 8; bit++)
                 crc = ((crc << 1) ^ ((crc & 32768U) ? 0x1021U : 0U)) & 65535U;
         }
         data[12] = (unsigned char)crc; data[13] = (unsigned char)(crc >> 8);
-        if (!strcmp(scenario(), "bad-checksum")) data[0] ^= 1;
+        if (!strcmp(scenario(), "bad-checksum") ||
+            (config[5] && !strcmp(scenario(), "bulk-crc"))) data[0] ^= 1;
         if (!strcmp(scenario(), "bad-counter")) data[2] ^= 1;
     }
 #endif

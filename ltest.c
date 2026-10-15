@@ -5,6 +5,8 @@
 #include <string.h>
 #ifdef RISCOS
 #include "oslib/os.h"
+/* OSLib also defines UNKNOWN; checklib.h supplies the topology value. */
+#undef UNKNOWN
 #else
 #include <time.h>
 #endif
@@ -46,7 +48,7 @@ static unsigned int checksum(unsigned char *data, unsigned int length)
     return crc;
 }
 
-static int configure(struct tpstats *p, int port, int role, unsigned int rounds, int size)
+static int configure(struct tpstats *p, int port, int role, unsigned int rounds, int size, int phase)
 {
     unsigned char config[8];
     memset(config, 0, sizeof(config));
@@ -55,12 +57,14 @@ static int configure(struct tpstats *p, int port, int role, unsigned int rounds,
     config[2] = (unsigned char)rounds;
     config[3] = (unsigned char)(rounds >> 8);
     config[4] = (unsigned char)size;
+    config[5] = (unsigned char)(phase != 0);
+    config[6] = (unsigned char)(phase == 2);
     if (!tryroute(TheLink, p, 4)) return FALSE;
     return sendiserver(TheLink, sizeof(config), config);
 }
 
 static int pair(struct tpstats *a, int ap, struct tpstats *b, int bp,
-                unsigned int rounds, int size)
+                unsigned int rounds, int size, int phase)
 {
     unsigned char result[14];
     unsigned int length = 0, ab, ba, ticks;
@@ -72,35 +76,47 @@ static int pair(struct tpstats *a, int ap, struct tpstats *b, int bp,
         int port = ap;
         a = b; ap = bp; b = p; bp = port;
     }
-    printf("node%d.link[%d] <-> node%d.link[%d] %s: ",
-           a->tpid, ap, b->tpid, bp, size == 1 ? "latency" : "integrity");
+    if (phase)
+        printf("node%d.link[%d] -> node%d.link[%d] throughput: ",
+               phase == 2 ? b->tpid : a->tpid, phase == 2 ? bp : ap,
+               phase == 2 ? a->tpid : b->tpid, phase == 2 ? ap : bp);
+    else
+        printf("node%d.link[%d] <-> node%d.link[%d] %s: ",
+               a->tpid, ap, b->tpid, bp, size == 1 ? "latency" : "integrity");
     fflush(stdout);
-    if (!configure(b, bp, 1, rounds, size) ||
+    if (!configure(b, bp, 1, rounds, size, phase) ||
         !getiserver(TheLink, &length, result, sizeof(result)) ||
         length != 1 || result[0] != 1 ||
-        !configure(a, ap, 2, rounds, size) ||
+        !configure(a, ap, 2, rounds, size, phase) ||
         !getiserver(TheLink, &length, result, sizeof(result))) {
         puts("NOT COMPLETED (communication failure)");
         return -1;
     }
     if (length != 14 || word(result+12) != checksum(result, 12) ||
-        (word(result) ^ word(result+2)) != 65535U || result[11] != 2 || word(result+8) != rounds ||
+        (word(result) ^ word(result+2)) != 65535U || result[11] != (phase ? phase + 2 : 2) || word(result+8) != rounds ||
         result[10] != size) {
         puts("NOT COMPLETED (invalid result)");
         return -1;
     }
     ab = word(result); ba = word(result+4); ticks = word(result+6);
-    if (ab > rounds*(unsigned int)size || ba > rounds*(unsigned int)size) {
+    if (ab > (phase ? 64U : rounds*(unsigned int)size) ||
+        ba > (phase ? 0U : rounds*(unsigned int)size)) {
         puts("NOT COMPLETED (invalid error counts)"); return -1;
     }
     elapsed = wallticks() - started;
-    printf("%u bytes each way, errors %u/%u, ", rounds * (unsigned int)size, ab, ba);
+    if (phase)
+        printf("%lu timed bytes, final-block errors %u, ",
+               ((unsigned long)rounds * 16UL - 1UL) * 64UL, ab);
+    else
+        printf("%u bytes each way, errors %u/%u, ", rounds * (unsigned int)size, ab, ba);
     if (elapsed >= 400UL || started == 0) printf("timing unavailable (timer wrap possible)");
     else if (ticks == 0) printf("below timer resolution");
+    else if (phase && ticks < 16) printf("timing too short for throughput");
     else {
         double seconds = (double)ticks * 0.000064;
-        if (size == 1) printf("mean round trip %.1f us", seconds * 1000000.0 / rounds);
-        else printf("round-trip goodput %.3f MB/s", 2.0 * rounds * size / seconds / 1000000.0);
+        if (phase) printf("%.3f MB/s", ((double)rounds * 16.0 - 1.0) * 64.0 / seconds / 1000000.0);
+        else printf("mean %s %.1f us", size == 1 ? "round trip" : "exchange time",
+                    seconds * 1000000.0 / rounds);
     }
     puts(ab || ba ? " FAIL" : " PASS");
     return ab || ba ? 1 : 0;
@@ -165,7 +181,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Failed loading processor %d; no link tests started\n", p->tpid);
                 failed = 1;
             }
-    puts("Directional errors are ordered as the printed endpoints; timing is round-trip, including worker overhead.");
+    puts("Integrity exchange timing includes pattern processing; throughput streams prepared buffers in each direction.");
     for (p = root; p; p = p->next) if (class(p->tptype) != C4)
         for (i = 0; i < 4; i++) {
             q = p->links[i];
@@ -176,12 +192,17 @@ int main(int argc, char **argv)
                        p->tpid, i, q->tpid, p->linkno[i], p == q ? " (self loop)" : "");
                 status = 1; continue;
             }
-            r = pair(p, i, q, p->linkno[i], rounds, 1);
+            r = pair(p, i, q, p->linkno[i], rounds, 1, 0);
             if (r < 0) { failed = 1; status = 1; continue; }
             status |= r;
-            r = pair(p, i, q, p->linkno[i], rounds, 64);
+            r = pair(p, i, q, p->linkno[i], rounds, 64, 0);
             if (r < 0) { failed = 1; status = 1; continue; }
             status |= r; tested++;
+            for (r = 1; r <= 2; r++) {
+                int outcome = pair(p, i, q, p->linkno[i], rounds, 64, r);
+                if (outcome < 0) { failed = 1; status = 1; break; }
+                status |= outcome;
+            }
         }
     if (!tested) { puts("No processor-to-processor links completed"); status = 1; }
     CloseLink(TheLink);
