@@ -195,7 +195,32 @@ OCCAM_SOURCES='size16 size32 ltest16 ltest32' tools/occam-build.sh build/diagnos
 Two-processor hardware exports were accepted by D7214C `icconf` after adding
 memory sizes, and by D7305 `occonf` after adding memory sizes and a minimal
 application mapping. Both produced `.cfb` files.
-Physical execution of the new sizing and link workers, their timing scale and
-recovery on broken links still require hardware validation. The new native
-commands have host C90 and export checks; they have not yet been built with
-Acorn C or run on RISC OS hardware.
+On 15 October 2026, all five native commands built and linked with Norcroft
+C 5.09 on an Acorn A5000 running RISC OS 3.1. Hardware checks used two T805G
+processors, each with 4 MiB RAM, connected by two physical links:
+
+- `ltest` passed both phases on both links at 1, 128 and 256 exchanges,
+  including the connection outside the discovery tree. All directional error
+  counts were zero. The dedicated runs returned exit status 0.
+- At 128 and 256 exchanges, measured mean round-trip latency was
+  24.5–24.7 microseconds and round-trip goodput was 0.128 MB/s. These are
+  observations from this setup, including worker overhead; the timer scale
+  has not been checked against an independent instrument.
+- `mtest -z -e 4096` and the existing `mtest -q -e 4096` both reported
+  `4096K|` for both processors and returned exit status 0. These runs reached
+  the selected ceiling; they did not probe beyond the installed RAM to
+  establish its boundary.
+- Native `netcfg -cc` and `netcfg -co` reproduced the two-processor topology,
+  including both physical links, and returned exit status 0.
+- The rebuilt FTEST passed all 18 subtests on each processor and returned
+  exit status 0, exercising the shared transport through the downstream
+  processor as well as the root.
+- A deliberately incorrect snapshot paired the unused link-3 ports. LTEST
+  retained the completed results for a working link, reported the unused
+  pair as `NOT COMPLETED (communication failure)` after a host read timeout,
+  and returned exit status 1. A subsequent ISPY reset and rediscovery restored
+  the actual two-link topology.
+
+Physical cable-disconnection and corruption tests remain outstanding, as do
+execution of the 16-bit workers and C004 programming readback checks on real
+switches.
