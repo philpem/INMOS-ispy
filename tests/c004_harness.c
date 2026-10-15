@@ -64,7 +64,15 @@ int main(int argc, char **argv)
     if (getenv("READ_CHUNK")) read_chunk = atoi(getenv("READ_CHUNK"));
     if (getenv("WRITE_CHUNK")) write_chunk = atoi(getenv("WRITE_CHUNK"));
 
-    if (!strcmp(argv[1], "set")) {
+    if (!strcmp(argv[1], "verify")) {
+        struct c4stats wanted = {0};
+        if (argc != 5) return 2;
+        chip.tptype = C4 + atoi(argv[2]);
+        for (i = 0; i < 32; i++) chip.config[i] = wanted.config[i] = C004_EMPTY;
+        wanted.config[7] = atoi(argv[3]);
+        chip.config[7] = atoi(argv[4]);
+        return verifyC004(&chip, &wanted) ? 0 : 1;
+    } else if (!strcmp(argv[1], "set")) {
         if (argc != 34) return 2;
         for (i = 0; i < 32; i++) chip.config[i] = atoi(argv[i + 2]);
         setC004(&chip);

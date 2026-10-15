@@ -1273,6 +1273,23 @@ void            setC004(struct c4stats * p)
         AbortExit(PROGRAM_NAME, "C004 %d failed to accept configuration", p->tpid);
 }
 /*}}}  */
+/* Verify all observable selections after programming and rediscovery. */
+int verifyC004(struct c4stats *actual, struct c4stats *wanted)
+{
+    int port, ok = TRUE;
+    if (wanted == NULL) return FALSE;
+    for (port = 0; port < C004_PORTS; port++) {
+        /* C004A does not reveal whether an output is disconnected. */
+        if (wanted->config[port] == C004_EMPTY && actual->tptype == C4) continue;
+        if (actual->config[port] != wanted->config[port]) {
+            fprintf(stderr, "C004 %d output %d: requested %d, read back %d\n",
+                    actual->tpid, port, wanted->config[port], actual->config[port]);
+            ok = FALSE;
+        }
+    }
+    return ok;
+}
+
 /*{{{  main */
 int main(int argc, char *argv[]) {
     struct tpstats *reference = NULL;
@@ -1289,6 +1306,8 @@ int main(int argc, char *argv[]) {
 	      &subsys, &c4read, &c4reset, &c4set,
 	      &kong, &do_reset, &information);
 
+    if (c4set && !do_reset)
+        AbortExit(PROGRAM_NAME, "-cs requires rediscovery; it cannot be combined with -n");
     if (TemplateFile != NULL && TemplateStdin)
         AbortExit(PROGRAM_NAME, "use either -f or -p for the network template");
     if (kong) {
@@ -1416,6 +1435,9 @@ int main(int argc, char *argv[]) {
 		for (q = (struct c4stats *) root; q != NULL; q = (struct c4stats *) q->next) {
 			if (class(q->tptype) == C4) {
 				readC004(q);
+                if (c4set && q->extra != NULL &&
+                    !verifyC004(q, (struct c4stats *)find(reference, q->tpid)))
+                    same = -1;
 			}
 		}
 	}

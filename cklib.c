@@ -339,28 +339,29 @@ static void parsec004(struct c4stats *q, char *cursor)
     }
 }
 
-int		lex(FILE * stream, struct tpstats ** root,
-				    char *Pipe, char *LinkName, char *Banner)
+static int lex_mode(FILE * stream, struct tpstats ** root,
+                    char *Pipe, char *LinkName, char *Banner, int echo)
 {
     struct tpstats *curr, *next;
     char	    line[LINESIZE];
-    int		    i,j;
+    int		    i;
     curr = *root = NULL;
-    *LinkName = '\0';
+    *Pipe = *Banner = *LinkName = '\0';
     while (fgets(line, LINESIZE, stream) != NULL) {
 	for (i = 0; (line[i]) && (line[i] != '\n'); i++);
 	line[i] = '\0';
-	if (line[0] == '#')
-	    printf("#%s\n", line);
+	if (line[0] == '#') {
+            if (echo) printf("#%s\n", line);
+        }
 	else if (!strncmp(line, "Using ", 6)) {
-	    strcpy(Pipe, line);
-	    for (i=6; line[i] == ' '; i++);
-	    for (j=0; line[i] != ' '; i++, j++)
-		LinkName[j] = line[i];
-	    LinkName[j] = '\0';
-	    fgets(Banner, LINESIZE, stream); /* next line, regardless */
-	    for (i = 0; (Banner[i]) && (Banner[i] != '\n'); i++);
-	    Banner[i] = '\0';
+            if (strlen(line) >= 128 || sscanf(line + 6, "%63s", LinkName) != 1)
+                AbortExit("lex", "invalid link header");
+            strcpy(Pipe, line);
+            if (fgets(line, LINESIZE, stream) == NULL || strlen(line) >= 128)
+                AbortExit("lex", "missing or oversized column header");
+            strcpy(Banner, line);
+            for (i = 0; Banner[i] && Banner[i] != '\n'; i++);
+            Banner[i] = '\0';
 	    {
 		char *c;
 		c = strstr(Banner, " by Andy");
@@ -373,12 +374,15 @@ int		lex(FILE * stream, struct tpstats ** root,
 	    char	    tputer[6];
 	    char	    linkinfo[4][10];
 	    char	    c;
-	    i = sscanf(line, "%d %5c-%2d %s %d [ %s %s %s %s ]",
+	    i = sscanf(line, "%d %5c-%2d %5s %d [ %9s %9s %9s %9s ]",
 		       &tpid, tputer, &procspeed,
 		       bootspeed, &bootlink,
 		linkinfo[0], linkinfo[1], linkinfo[2], linkinfo[3]);
 	    if (i == 9)
 	    {
+                if (bootlink < 0 || bootlink > 3 || tpid < 0 || tpid > 65535 ||
+                    find(*root, tpid) != NULL)
+                    AbortExit("lex", "invalid processor ID or boot link");
 		next = (struct tpstats *) Malloc(sizeof(struct tpstats));
 		if (curr != NULL)
 		    curr->next = next;
@@ -428,6 +432,8 @@ int		lex(FILE * stream, struct tpstats ** root,
         i = sscanf(line, "%d %5s", &tpid, tputer);
         if ((i == 2) && (tputer[0] == 'C'))
         {
+            if (tpid < 0 || tpid > 65535 || find(*root, tpid) != NULL)
+                AbortExit("lex", "invalid or duplicate C004 ID");
             q = (struct c4stats *) Malloc(sizeof(struct c4stats));
             if (curr != NULL)
                 curr->next = (struct tpstats *) q;
@@ -457,6 +463,16 @@ int		lex(FILE * stream, struct tpstats ** root,
 	return (0);
 }
 /*}}}  */
+int lex(FILE *stream, struct tpstats **root, char *pipe, char *link, char *banner)
+{
+    return lex_mode(stream, root, pipe, link, banner, TRUE);
+}
+
+int lexquiet(FILE *stream, struct tpstats **root, char *pipe, char *link, char *banner)
+{
+    return lex_mode(stream, root, pipe, link, banner, FALSE);
+}
+
 /*{{{  struct tpstats *find(struct tpstats * root, int id) */
 struct tpstats *find(struct tpstats * root, int id)
 {
@@ -468,7 +484,7 @@ struct tpstats *find(struct tpstats * root, int id)
 /*{{{  char	      *tptostr(int tp) */
 char	       *tptostr(int tp)
 {
-    static char	    buffer[8];
+    static char	    buffer[32];
     if ((tp / 10) < NUMTPIDS)
 	strcpy(buffer, (TPIDS[(class(tp) / 10) + TPOFFSET]));
     else
@@ -638,7 +654,7 @@ int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 		int bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
 		DEBUG((stderr, "readbytes(bytesread = %d)", bytesread));
 
-		if (bytesread < 0) {
+		if (bytesread < 0 || (unsigned int)bytesread > bytes_to_go) {
 			fprintf(stderr, "Read from link failed - result = %i\n", bytesread);
 			return (0);
 		}
@@ -675,6 +691,7 @@ int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 int getiserver(LINK TheLink, unsigned int *length, unsigned char *string, unsigned int maxlength){
 	unsigned char header[2];
 
+	*length = 0;
 	if (readbytes(TheLink, header, 2) != 2) {
 		return (FALSE);
 	}
@@ -699,7 +716,7 @@ static int writebytes(LINK TheLink, unsigned int length, unsigned char *buffer)
 	unsigned int done = 0;
 	while (done < length) {
 		int written = WriteLink(TheLink, &buffer[done], length - done, TIMEOUT);
-		if (written <= 0) return FALSE;
+		if (written <= 0 || (unsigned int)written > length - done) return FALSE;
 		done += (unsigned int)written;
 	}
 	return TRUE;
@@ -708,6 +725,7 @@ static int writebytes(LINK TheLink, unsigned int length, unsigned char *buffer)
 int sendiserver(LINK TheLink, unsigned int length, unsigned char *buffer) {
 	unsigned char   int16[2];
 
+	if (length > 65535U) return FALSE;
 	int16[0] = (unsigned char) (length & 0xFF);
 	int16[1] = (unsigned char) (length >> 8);
 
@@ -718,7 +736,7 @@ int sendiserver(LINK TheLink, unsigned int length, unsigned char *buffer) {
 	return writebytes(TheLink, length, buffer);
 }
 
-void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
+int tryroute(LINK TheLink, struct tpstats * p, int lastlink) {
 	unsigned char  *route;
 	struct tpstats *q;
 	unsigned int    i;
@@ -735,36 +753,39 @@ void setroute(LINK TheLink, struct tpstats * p, int lastlink) {
 			route[i - 1] = (unsigned char) q->route;
 		}
 		
-		if ((i != 0) || (q->parent != NULL)) {
+		if ((i != 0) || (q == NULL) || (q->parent != NULL)) {
 			free(route);
 			AbortExit("loader", "Error finding route thread, processor %d", p->tpid);
 		}
-		if ((WriteLink(TheLink, ROUTE, sizeof(ROUTE), TIMEOUT) == sizeof(ROUTE)) && sendiserver(TheLink, (p->routelen) + 1, route)) {
+		if (writebytes(TheLink, sizeof(ROUTE), ROUTE) && sendiserver(TheLink, (p->routelen) + 1, route)) {
 			/* noop */
 		} else {
-			if (lastlink == (-1)) {
-				AbortExit("loader", "Timed out stopping processor %d", p->tpid);
-			}  else {
-				if (lastlink < 4) {
-					AbortExit("loader", "Timed out setting route to processor %d",  p->links[lastlink]->tpid);
-				}
-
-			}
+			free(route);
+			return FALSE;
 		}
 		free(route);
 	}
+	return TRUE;
 }
 
-void tpboot(LINK TheLink, struct tpstats * p) {
+void setroute(LINK link, struct tpstats *p, int lastlink)
+{
+    if (!tryroute(link, p, lastlink))
+        AbortExit("loader", "Failed setting route to processor %d, destination %d",
+                  p ? p->tpid : -1, lastlink);
+}
+
+static int bootroute(LINK link, struct tpstats *p)
+{
     static unsigned char TPBOOT[] = {0xFF, 0xFF, TAG_BOOT};
-    if (p->parent != NULL) {
-    	setroute(TheLink, p->parent, p->route);
-    	if (WriteLink(TheLink, TPBOOT, 3, TIMEOUT) == 3) {
-    		/* noop */
-    	} else {
-	    	AbortExit("loader", "Timed out preparing to boot processor %d", p->tpid);
-	    }
-    }
+    return p->parent == NULL ||
+           (tryroute(link, p->parent, p->route) && writebytes(link, 3, TPBOOT));
+}
+
+void tpboot(LINK link, struct tpstats *p)
+{
+    if (!bootroute(link, p))
+        AbortExit("loader", "Failed preparing to boot processor %d", p->tpid);
 }
 
 int load(LINK TheLink, struct tpstats * p,
@@ -781,14 +802,19 @@ int load(LINK TheLink, struct tpstats * p,
 	unsigned char 	params[16];
 	
 	DEBUG((stderr, "load - tpboot\n"));
-	tpboot(TheLink, p);
+	if ((BytesPerWord != 2 && BytesPerWord != 4) || CodeSize <= 0 ||
+	    Offset < 0 || WorkSpace < 0 || VectorSpace < 0 ||
+	    (BytesPerWord == 2 && (CodeSize > 65535L || Offset > 65535L ||
+	                          WorkSpace > 65535L || VectorSpace > 65535L)))
+		return FALSE;
+	if (!bootroute(TheLink, p)) return FALSE;
 	length = CodeSize;
 	if (p->parent != NULL) {
 		DEBUG((stderr, "load - sendiserver 1\n"));
 		flag = sendiserver(TheLink, sizeof(boot), boot);
 	} else {
 		DEBUG((stderr, "load - writelink 1\n"));
-		flag = WriteLink(TheLink, boot, sizeof(boot), TIMEOUT) == sizeof(boot);
+		flag = writebytes(TheLink, sizeof(boot), boot);
 	}
 	if (flag) {
 		j = 0;
@@ -817,7 +843,7 @@ int load(LINK TheLink, struct tpstats * p,
 			flag = sendiserver(TheLink, 4 * BytesPerWord, params);
 		} else {
 			DEBUG((stderr, "load - writelink 2\n"));
-			flag = (WriteLink(TheLink, params, 4 * BytesPerWord, TIMEOUT) == (4 * BytesPerWord));
+			flag = writebytes(TheLink, 4 * BytesPerWord, params);
 		}
 		
 		for (i = 0; (i < length) && flag; i += count)	{
@@ -830,7 +856,7 @@ int load(LINK TheLink, struct tpstats * p,
 				flag = sendiserver(TheLink, (int) count, &Code[i]);
 			} else {
 				DEBUG((stderr, "load - writelink 3\n"));
-				flag = WriteLink(TheLink, &Code[i], (int) count, TIMEOUT) == (int) count;
+				flag = writebytes(TheLink, (unsigned int)count, &Code[i]);
 			}
 		}
 	}

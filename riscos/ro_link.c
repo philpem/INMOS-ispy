@@ -8,6 +8,7 @@
 */
 
 #include "oslib/os.h"
+#include <limits.h>
 
 extern int TestRead (int);
 extern int TestWrite(int);
@@ -17,11 +18,12 @@ extern int _WriteLink(int, char*, unsigned int, int);
 
 /* Read monotonic time ---------------------------------------------------------------------------------- */
 
-static unsigned int MonotonicTime(void)
+static int MonotonicTime(unsigned int *ticks)
 {
   int t;
-  (void)xos_read_monotonic_time(&t);
-  return t;
+  if (xos_read_monotonic_time(&t) != 0) return -1;
+  *ticks = (unsigned int)t;
+  return 0;
 }
 
 /* ReadLink() ------------------------------------------------------------------------------------------- */
@@ -29,18 +31,27 @@ static unsigned int MonotonicTime(void)
 int ReadLink(int LinkId, char* Buffer, unsigned int Count, int Timeout)
 {
   int          i, n = 0;
-  unsigned int time = MonotonicTime() + Timeout*10;
+  unsigned int time, now, chunk;
+  if (Count == 0) return 0;
+  if (Timeout < 0 || Count > INT_MAX || MonotonicTime(&now) < 0) return -1;
+  time = now + (unsigned int)Timeout*10;
 
   while (Count != 0)
   {
-    if (TestRead(LinkId))
+    if ((i = TestRead(LinkId)) < 0) return -1;
+    if (i)
     {
-      i = _ReadLink(LinkId, Buffer, Count, Timeout);
+      /* The assembly polls only a bounded number of times per byte, but
+       * ignores Timeout. Limit each burst, then check the wall deadline. */
+      chunk = Count > 256 ? 256 : Count;
+      i = _ReadLink(LinkId, Buffer, chunk, Timeout);
+      if (i < 0 || (unsigned int)i > chunk) return -1;
       Buffer += i;
       Count  -= i;
       n      += i;
     }
-    if (Timeout != 0 && (MonotonicTime() - time) < 0x80000000) break;
+    if (MonotonicTime(&now) < 0) return -1;
+    if (Timeout != 0 && (now - time) < 0x80000000U) break;
   }
 
   return n;
@@ -51,18 +62,25 @@ int ReadLink(int LinkId, char* Buffer, unsigned int Count, int Timeout)
 int WriteLink(int LinkId, char* Buffer, unsigned int Count, int Timeout)
 {
   int          i, n = 0;
-  unsigned int time = MonotonicTime() + Timeout*10;
+  unsigned int time, now, chunk;
+  if (Count == 0) return 0;
+  if (Timeout < 0 || Count > INT_MAX || MonotonicTime(&now) < 0) return -1;
+  time = now + (unsigned int)Timeout*10;
 
   while (Count != 0)
   {
-    if (TestWrite(LinkId))
+    if ((i = TestWrite(LinkId)) < 0) return -1;
+    if (i)
     {
-      i = _WriteLink(LinkId, Buffer, Count, Timeout);
+      chunk = Count > 256 ? 256 : Count;
+      i = _WriteLink(LinkId, Buffer, chunk, Timeout);
+      if (i < 0 || (unsigned int)i > chunk) return -1;
       Buffer += i;
       Count  -= i;
       n      += i;
     }
-    if (Timeout != 0 && (MonotonicTime() - time) < 0x80000000) break;
+    if (MonotonicTime(&now) < 0) return -1;
+    if (Timeout != 0 && (now - time) < 0x80000000U) break;
   }
 
   return n;

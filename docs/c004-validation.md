@@ -53,6 +53,16 @@ whether each output is connected.
 - Reset tracking retains complete routes, including leading zero hops, and
   has no fixed 100-switch array. Helper loading and reset sends are checked.
 
+## Programming readback
+
+After `ispy -cs -f snapshot` programs and rediscovers the network, it compares
+requested output selections with readback. Mismatches identify the switch,
+output, requested input and observed input, and return a non-zero status.
+C004A cannot reveal whether an output is disconnected, so requested empty
+outputs remain unverifiable on that revision. Host regressions cover both
+revision behaviours. `-cs -n` is rejected before opening the link because
+programming requires subsequent rediscovery.
+
 ## Long-format compatibility
 
 Long connections now use the documented `INPUT>OUTPUT` direction. Earlier code
