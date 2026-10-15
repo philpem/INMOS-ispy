@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def pattern(round, n, direction):
     return bytes((i + (round & 255)*17 + direction) & 255 for i in range(n))
 
-def command(role, peer, rounds, n):
-    config = bytes([role, peer, rounds & 255, rounds >> 8, n, 0, 0, 0])
+def command(role, peer, rounds, n, bulk=False, reverse=False):
+    config = bytes([role, peer, rounds & 255, rounds >> 8, n, int(bulk), int(reverse), 0])
     return b'\xff\xff\0\1\0\4\10\0' + config
 
 class PayloadTests(unittest.TestCase):
@@ -108,3 +108,69 @@ class PayloadTests(unittest.TestCase):
             packet = vm.outputs[0]
             self.assertEqual(packet[10:12], b'\0\1')
             self.assertEqual(int.from_bytes(packet[14:16], 'little'), binascii.crc_hqx(packet[2:14], 65535))
+
+    def test_bulk_receiver_times_only_stream_after_warmup(self):
+        class TimedWorker(Worker):
+            def __init__(self, *args, **kwargs):
+                self.received = 0
+                self.timer_bytes = []
+                self.buffer_address = None
+                self.timed_buffer_reads = 0
+                super().__init__(*args, **kwargs)
+            def input(self, channel, pointer, count):
+                if channel == self.mint + 5*self.word and count == 64:
+                    self.received += count
+                    self.buffer_address = pointer
+                super().input(channel, pointer, count)
+            def load(self, address):
+                if len(getattr(self, 'timer_bytes', [])) == 1 and self.buffer_address is not None:
+                    if self.buffer_address <= address < self.buffer_address+64:
+                        self.timed_buffer_reads += 1
+                return super().load(address)
+            def operate(self, op):
+                if op == 0x22: self.timer_bytes.append(self.received)
+                return super().operate(op)
+        for bits in (16, 32):
+            for reverse, role in ((False, 1), (True, 2)):
+                for rounds in (1, 256):
+                    with self.subTest(bits=bits, reverse=reverse, rounds=rounds):
+                        blocks = rounds*16
+                        incoming = bytearray(bytes(range(64))*blocks)
+                        incoming[-1] ^= 1
+                        if role == 1: incoming = b'\1'+incoming
+                        vm = TimedWorker(ROOT/f'ltest{bits}.h',
+                                         command(role, 1, rounds, 64, True, reverse), incoming=incoming)
+                        vm.run()
+                        self.assertEqual(vm.timer_bytes, [64, blocks*64])
+                        self.assertEqual(vm.timed_buffer_reads, 0)
+                        packet = bytes(vm.outputs[1])
+                        self.assertEqual(len(packet), 14 if role == 1 else 15)  # start token
+                        if role == 2: packet = packet[1:]
+                        self.assertEqual(packet[:4], b'\1\0\xfe\xff')
+                        self.assertEqual(packet[6:8], b'd\0')
+                        self.assertEqual(packet[11], 4 if reverse else 3)
+                        self.assertEqual(int.from_bytes(packet[12:], 'little'), binascii.crc_hqx(packet[:12],65535))
+                        expected = b'\1\0\1' if role == 1 else b'\16\0'+packet
+                        self.assertEqual(vm.outputs[0], expected)
+
+    def test_bulk_sender_streams_prepared_blocks_and_preserves_remote_crc(self):
+        for bits in (16, 32):
+            for reverse, role in ((False, 2), (True, 1)):
+                with self.subTest(bits=bits, reverse=reverse):
+                    # An opaque packet including a deliberately invalid CRC must
+                    # survive forwarding, so the host can detect wire damage.
+                    report = bytes(range(14))
+                    incoming = report if role == 2 else b'\1'+report
+                    vm = Worker(ROOT/f'ltest{bits}.h', command(role, 1, 2, 64, True, reverse), incoming=incoming)
+                    vm.run()
+                    expected_data = bytes(range(64))*32
+                    if role == 2: expected_data = b'\1'+expected_data
+                    self.assertEqual(vm.outputs[1], expected_data)
+                    self.assertEqual(vm.outputs[0], b'\16\0'+report if role == 2 else b'\1\0\1')
+
+    def test_integrity_initiator_preserves_invalid_remote_complement(self):
+        for bits in (16, 32):
+            incoming = pattern(0,64,113)+b'\3\0\0\0'
+            vm = Worker(ROOT/f'ltest{bits}.h',command(2,1,1,64),incoming=incoming)
+            vm.run()
+            self.assertEqual(vm.outputs[0][2:6], b'\3\0\0\0')
