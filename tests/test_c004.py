@@ -92,6 +92,15 @@ class C004Tests(unittest.TestCase):
     def template(self, row):
         return "0 T425b-20 1.0M 0 [ HOST 1:C ... ... ]\n" + row + "\n"
 
+    def test_programmed_map_readback_verification(self):
+        for revision in (0, 1):
+            self.run_harness("verify", revision, 3, 3)
+            result = self.run_harness("verify", revision, 3, 4, ok=False)
+            self.assertIn("output 7: requested 3, read back 4", result.stderr)
+        self.run_harness("verify", 0, -1, 0)  # C004A cannot expose disconnection.
+        self.run_harness("verify", 1, -1, 0, ok=False)
+        self.run_harness("verify", 1, -1, -1)
+
     def test_all_c004b_reply_values(self):
         for start in range(0, 256, 32):
             raw = list(range(start, start + 32))

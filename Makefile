@@ -22,7 +22,7 @@ FIND            = grep
 
 .PHONY: all clean occam check test-host
 
-all:     ispy$(E) mtest$(E) ftest$(E)
+all:     ispy$(E) mtest$(E) ftest$(E) netcfg$(E) ltest$(E)
 
 FTESTOBJS = ftest$(O) testt2$(O) testt32$(O) testt414$(O) testt425$(O) \
             testt80x$(O) testt800$(O) testt801$(O) testlater$(O)
@@ -42,7 +42,7 @@ archive:
 # this makefile in 'included' by another makefile
 
 clean:
-		rm -f *.o ispy mtest ftest .occam.stamp
+		rm -f *.o ispy mtest ftest netcfg ltest .occam.stamp
 
 #
 #  occam code-blob headers
@@ -58,7 +58,7 @@ occam: .occam.stamp
 # If regeneration and host targets are requested together, wait for the new
 # headers before deciding whether the embedding objects need recompilation.
 ifneq ($(filter occam,$(MAKECMDGOALS)),)
-check$(O) mtest$(O) $(FTESTOBJS): .occam.stamp
+check$(O) mtest$(O) ltest$(O) $(FTESTOBJS): .occam.stamp
 endif
 
 .occam.stamp: $(wildcard occam/*.occ) tools/occam-build.sh tools/tco2h.py tools/fetch-toolchain.sh
@@ -85,7 +85,7 @@ mtest$(E):      mtest$(O) cklib$(O) $(LINKOBJS)
 		$(LINK) -o mtest$(E) mtest$(O) cklib$(O) $(LINKOBJS)
 
 mtest$(O):      mtest.c cklib.h inmos.h  \
-		mtest32.h mtest16.h checklib.h
+		mtest32.h mtest16.h size16.h size32.h checklib.h
 		$(CC) -o mtest$(O) mtest.c
 
 #
@@ -125,6 +125,12 @@ testlater$(O): testlater.c probe85.h test85cm.h test85st.h test85co.h test85in.h
               probe45.h test45cm.h test45st.h test45co.h test45in.h
 		$(CC) -o $@ testlater.c
 
+
+netcfg$(E): netcfg$(O) cklib$(O) $(LINKOBJS)
+		$(LINK) -o $@ netcfg$(O) cklib$(O) $(LINKOBJS)
+
+netcfg$(O): netcfg.c cklib.h inmos.h checklib.h
+		$(CC) -o $@ netcfg.c
 
 #
 #  ckmon
@@ -224,3 +230,9 @@ $(LINKMODULE)$(O):      $(LINKMODULE).c inmos.h
 #
 #  eof
 #
+
+ltest$(E): ltest$(O) cklib$(O) $(LINKOBJS)
+		$(LINK) -o $@ ltest$(O) cklib$(O) $(LINKOBJS)
+
+ltest$(O): ltest.c cklib.h inmos.h checklib.h ltest16.h ltest32.h
+		$(CC) -o $@ ltest.c

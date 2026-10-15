@@ -32,11 +32,11 @@ class BuildTests(unittest.TestCase):
 
             # No stamp, target compiler, toolset archive or real build script.
             make()
-            for name in ("ispy", "mtest", "ftest"):
+            for name in ("ispy", "mtest", "ftest", "ltest", "netcfg"):
                 self.assertTrue((root / name).is_file())
             self.assertFalse((root / ".occam.stamp").exists())
             objects = [root / name for name in ("check.o", "mtest.o", "ftest.o",
-                                               "testlater.o", "testt800.o")]
+                                               "testlater.o", "testt800.o", "ltest.o")]
             before = [p.stat().st_mtime_ns for p in objects]
             builder.write_text("#!/bin/sh\ntouch \"$1/c00416.h\" \"$1/mtest32.h\"\n")
             make("occam", "all")

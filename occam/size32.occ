@@ -1,0 +1,247 @@
+
+-- --------------------------------------------------
+--
+--    size32.occ  --  sparse 32bit memory sizing
+--
+-- --------------------------------------------------
+
+
+
+#INCLUDE "checklib.occ"
+PROC size32(VAL INT bootchan)
+  CHAN OF INT TIME :
+  --{{{  VALs
+  VAL passing IS 0(BYTE):
+  VAL booting IS 1(BYTE):
+  VAL special IS 1(BYTE):
+  VAL size.segment IS 20 :
+  --}}}  
+  --{{{  PROC speedtest([]INT vector, INT speed)
+  PROC speedtest([]INT vector, INT speed)
+    INT now, then :
+    SEQ
+      TIME ? now           -- throw away, start clock
+      vector := vector
+      TIME ? now           -- start
+      TIME ? then          -- finish
+      speed := then MINUS now
+  :
+  --}}}  
+  --{{{  PROC pass.packet, expects length to have been input
+  PROC pass.packet(CHAN OF ANY input, output, INT length, VAL BYTE status)
+    [size.segment]BYTE buffer :
+    SEQ
+      IF
+        status = booting
+          SKIP
+        TRUE
+          output ! (INT16 length)
+      WHILE length > 0
+        IF
+          --{{{  block too big
+          length > size.segment
+            SEQ
+              input ? buffer
+              output ! buffer
+              length := length - size.segment
+          --}}}  
+          --{{{  block fits
+          TRUE
+            SEQ
+              input ? [buffer FROM 0 FOR length]
+              output ! [buffer FROM 0 FOR length]
+              length := 0
+          --}}}  
+  :
+  --}}}  
+  --{{{  hard CHANs, INPUT and OUTPUT
+  CHAN OF ANY link.out.0, link.out.1, link.out.2, link.out.3 :
+  PLACE link.out.0 AT 0 :
+  PLACE link.out.1 AT 1 :
+  PLACE link.out.2 AT 2 :
+  PLACE link.out.3 AT 3 :
+  [4]CHAN OF ANY OUTPUT IS [link.out.0, link.out.1,
+                            link.out.2, link.out.3] :
+  CHAN OF ANY link.in.0, link.in.1, link.in.2, link.in.3 :
+  PLACE link.in.0 AT 4 :
+  PLACE link.in.1 AT 5 :
+  PLACE link.in.2 AT 6 :
+  PLACE link.in.3 AT 7 :
+  [4]CHAN OF ANY INPUT IS [link.in.0, link.in.1,
+                           link.in.2, link.in.3] :
+  CHAN OF ANY COMMAND IS INPUT[bootchan] :
+  --}}}  
+  CHAN OF ANY to.application, from.application :
+  PRI PAR
+    PAR
+      --{{{  Hi Pri timer, (nearly) always read twice.
+      TIMER clock :
+      INT now :
+      WHILE TRUE
+        SEQ
+          clock ? now
+          TIME ! now
+      --}}}  
+      --{{{  stuff from root
+      --{{{  DECLs
+      [4]BYTE tag :  -- 0 is scratch, 1 is mode, 2 is path, 3 is special
+      [4]BYTE lenbytes :
+      INT length RETYPES lenbytes :
+      --}}}  
+      SEQ
+        tag[1] := passing
+        lenbytes := [0(BYTE),0(BYTE),0(BYTE),0(BYTE)]
+        WHILE TRUE
+          SEQ
+            COMMAND ? [lenbytes FROM 0 FOR 2]
+            IF
+              --{{{  escape
+              length = #FFFF
+                SEQ
+                  COMMAND ? tag[0]
+                  IF
+                    --{{{  setpath
+                    tag[0] = TAG.SETPATH
+                      SEQ
+                        COMMAND ? [lenbytes FROM 0 FOR 2]
+                        COMMAND ? tag[2]
+                        length := length-1
+                        tag[1] := passing
+                        IF
+                          --{{{  length = 0
+                          length = 0
+                            IF
+                              tag[2] = TAG.HALT
+                                --{{{  stop
+                                SEQ
+                                  ASM
+                                    OPR #1FF -- reboot
+                                --}}}  
+                              TRUE
+                                tag[3] := special
+                          --}}}  
+                          --{{{  otherwise
+                          TRUE
+                            CHAN OF ANY NEXT IS OUTPUT[(INT tag[2])] :
+                            SEQ
+                              tag[3] := 0(BYTE) -- non-special
+                              NEXT ! ESCAPE; TAG.SETPATH
+                              pass.packet(COMMAND, NEXT, length, passing)
+                          --}}}  
+                    --}}}  
+                    --{{{  I'm not special, following IFs are special
+                    tag[3] <> special
+                      OUTPUT[(INT tag[2])] ! ESCAPE; tag[0]
+                    --}}}  
+                    --{{{  boot
+                    tag[0] = TAG.BOOT
+                      tag[1] := booting  -- set boot mode
+                    --}}}  
+              --}}}  
+              TRUE
+                IF
+                  tag[2] = 4(BYTE)
+                    pass.packet(COMMAND, to.application, length, tag[1])
+                  TRUE
+                    pass.packet(COMMAND, OUTPUT[(INT tag[2])],
+                                length, tag[1])
+      --}}}  
+      --{{{  outgoing lines, requests                  -- return
+      WHILE TRUE
+        [4]BYTE lenbytes :
+        INT length RETYPES lenbytes :
+        SEQ
+          lenbytes := [0(BYTE),0(BYTE),0(BYTE),0(BYTE)]
+          ALT
+            ALT i = 1 FOR 3
+              CHAN OF ANY MYINPUT IS INPUT[(bootchan+i)\4] :
+              MYINPUT ? [lenbytes FROM 0 FOR 2]
+                pass.packet(MYINPUT, OUTPUT[bootchan], length, passing)
+            from.application ? length
+              pass.packet(from.application, OUTPUT[bootchan], length, passing)
+      --}}}  
+    --{{{  ramtest
+    --{{{  info
+    [16]BYTE info :
+    -- [info FROM 0 FOR 2] = id
+    --  info     [2]       = test which failed
+    --  info     [3]       = error / wrap
+    -- [info FROM 4 FOR 4] = bytes found
+    -- [info FROM 8 FOR 4] = memory speed
+    -- [info FROM 12 FOR 4]= error bits
+    --}}}  
+    BYTE start.test :
+    INT end.addr :
+    WHILE TRUE  -- so we can do soak tests
+      SEQ
+        --{{{  read processor id, start.test, end.addr
+        -- INT16 id RETYPES [info FROM 0 FOR 2] :
+        SEQ
+          INT16 len :
+          to.application ? len
+          to.application ? [info FROM 0 FOR 8]
+          start.test := info[2]
+          INT end RETYPES [info FROM 4 FOR 4] :
+          end.addr := end
+        --}}}  
+        [#4000000]INT ram :
+        PLACE ram AT 0 :
+        VAL block.size IS 512 :
+        INT addr  RETYPES [info FROM 4 FOR 4]:
+        INT speed RETYPES [info FROM 8 FOR 4] :
+        INT error RETYPES [info FROM 12 FOR 4] :
+        SEQ
+          addr := 0
+          info[3] := 0(BYTE)
+          error := 0
+          WHILE info[3] = 0(BYTE)
+            INT check :
+            SEQ
+              info[2] := 6(BYTE)
+              IF
+                addr = 0
+                  SKIP
+                TRUE
+                  --{{{  test and check RAM
+                  SEQ
+                    -- Distinct sparse markers, not a full RAM test.
+                    ram[addr] := (addr >< (-1))
+                    error := ram[addr] >< ((addr >< (-1)))
+                    ram[addr] := addr
+                    error := error \/ (ram[addr] >< addr)
+                    IF
+                      error <> 0
+                        info[3] := 1(BYTE)
+                      ram[block.size] <> block.size
+                        info[3] := $FF(BYTE)
+                      (addr PLUS block.size) >= end.addr
+                        info[3] := 2(BYTE)
+                      TRUE
+                        SKIP
+                    -- One final sweep catches aliases which missed the first
+                    -- marker. Such a map has no reliable contiguous size.
+                    IF
+                      info[3] <> 0(BYTE)
+                        SEQ
+                          check := block.size
+                          WHILE (check < addr) AND (ram[check] = check)
+                            check := check PLUS block.size
+                          IF
+                            (check < addr) AND (info[3] <> $FF(BYTE))
+                              info[3] := $FE(BYTE)
+                            TRUE
+                              SKIP
+                      TRUE
+                        SKIP
+                  --}}}  
+              from.application ! 16     -- your attention, please
+              speed := 0
+              from.application ! info
+              addr := addr PLUS block.size
+    --}}}  
+:
+
+
+--
+--  eof
+--

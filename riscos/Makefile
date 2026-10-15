@@ -12,7 +12,7 @@ TESTOBJS = @.o.testt2 @.o.testt32 @.o.testt414 @.o.testt425 \
            @.o.testt80x @.o.testt800 @.o.testt801 @.o.testlater
 HEADERS = @.h.inmos @.h.checklib @.h.cklib
 
-all: @.ispy @.mtest @.ftest
+all: @.ispy @.mtest @.ftest @.netcfg @.ltest
 
 @.ispy: @.o.check $(COMMON) C:o.Stubs OSLib:o.OSLib
         link $(Linkflags) C:o.Stubs @.o.check $(COMMON) OSLib:o.OSLib
@@ -27,7 +27,7 @@ all: @.ispy @.mtest @.ftest
           @.h.type16 @.h.type32 @.h.check16 @.h.check32 @.h.c00416 @.h.c00432
         cc $(CCflags) -o @.o.check @.c.check
 
-@.o.mtest: @.c.mtest $(HEADERS) @.h.mtest16 @.h.mtest32
+@.o.mtest: @.c.mtest $(HEADERS) @.h.mtest16 @.h.mtest32 @.h.size16 @.h.size32
         cc $(CCflags) -o @.o.mtest @.c.mtest
 
 @.o.ftest: @.c.ftest $(HEADERS) @.h.testcode @.h.test4k @.h.route16 @.h.route32 @.h.peek
@@ -69,3 +69,15 @@ all: @.ispy @.mtest @.ftest
 @.o.tmblink: @.s.tmblink OSLibInclude:Hdr.Types \
             OSLibInclude:Hdr.OS OSLibInclude:Hdr.Podule
         objasm $(ObjAsmflags) -from @.s.tmblink -to @.o.tmblink
+
+@.netcfg: @.o.netcfg $(COMMON) C:o.Stubs OSLib:o.OSLib
+        link $(Linkflags) C:o.Stubs @.o.netcfg $(COMMON) OSLib:o.OSLib
+
+@.o.netcfg: @.c.netcfg $(HEADERS)
+        cc $(CCflags) -o @.o.netcfg @.c.netcfg
+
+@.ltest: @.o.ltest $(COMMON) C:o.Stubs OSLib:o.OSLib
+        link $(Linkflags) C:o.Stubs @.o.ltest $(COMMON) OSLib:o.OSLib
+
+@.o.ltest: @.c.ltest $(HEADERS) @.h.ltest16 @.h.ltest32 OSLib:oslib.h.os
+        cc $(CCflags) -o @.o.ltest @.c.ltest

@@ -15,6 +15,7 @@
 #
 # Environment:
 #   OCCAM_ZIP   toolset archive   (default tools/inmos/d7305a.zip)
+#   OCCAM_SOURCES  optional space-separated subset of payload names
 #   OCCAM_WORK  scratch directory (default ${TMPDIR:-/tmp}/ispy-occam)
 #
 # Diagnostic sources are compiled for their historical processor classes.
@@ -49,10 +50,15 @@ bases=()
 for src in "$root"/occam/*.occ; do
     base=$(basename "$src" .occ)
     case "$base" in
-        checklib|router|u805|u425|peekpoke|pass16|pass32) continue ;;   # include-only / unused examples
+        checklib|router|linktest|u805|u425|peekpoke|pass16|pass32) continue ;;   # include-only / unused examples
     esac
+    if [ -n "${OCCAM_SOURCES:-}" ]; then
+        case " $OCCAM_SOURCES " in *" $base "*) ;; *) continue ;; esac
+    fi
     bases+=("$base")
 done
+
+[ "${#bases[@]}" -gt 0 ] || { echo "error: no payload sources selected" >&2; exit 1; }
 
 echo "==> generating build batch (${#bases[@]} sources)"
 {

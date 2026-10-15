@@ -55,6 +55,7 @@ void	       *Malloc(int size);
 
 int		lex(FILE * stream, struct tpstats ** root,
 				  char *Pipe, char *LinkName, char *Banner);
+int lexquiet(FILE *stream, struct tpstats **root, char *pipe, char *link, char *banner);
 struct tpstats *find(struct tpstats * root, int id);
 int		readtp(char *tputer);
 EXTERN char    *tptostr(int tp);
@@ -81,6 +82,7 @@ int		getiserver(LINK TheLink, unsigned int *length,
 			     unsigned char *string, unsigned int maxlength);
 int		sendiserver(LINK TheLink, unsigned int length,
 					    unsigned char *buffer);
+int tryroute(LINK link, struct tpstats *p, int lastlink);
 void		setroute(LINK TheLink, struct tpstats * p, int lastlink);
 void		tpboot(LINK TheLink, struct tpstats * p);
 int		load(LINK TheLink, struct tpstats * p,

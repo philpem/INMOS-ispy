@@ -54,6 +54,8 @@ char *PROGRAM_NAME = "mtest";
 #include "inmos.h"
 #include "mtest32.h"
 #include "mtest16.h"
+#include "size16.h"
+#include "size32.h"
 #include "checklib.h"
 #include "cklib.h"
 /*}}}  */
@@ -81,6 +83,20 @@ struct meminfo
 /*}}}  */
 int Kb2 = DOTSIZE * 32, Mb = 0;
 LINK TheLink;
+static int sparse = FALSE;
+static int report_truncated = FALSE;
+static unsigned int tests_started = 0;
+
+static int append_info(struct tpstats *p, const char *text)
+{
+    if (strlen(p->info) + strlen(text) >= sizeof(p->info)) {
+        fprintf(stderr, "Processor %d: memory detail exceeds report line; details omitted\n", p->tpid);
+        report_truncated = TRUE;
+        return FALSE;
+    }
+    strcat(p->info, text);
+    return TRUE;
+}
 
 /*{{{  Usage */
 void Usage (void)
@@ -93,6 +109,7 @@ void Usage (void)
 	fprintf (stdout, " %ct <tp> :  test processor <tp> only\n", SWITCHAR);
 	fprintf (stdout, " %ct2     :  test T2s only\n", SWITCHAR);
 	fprintf (stdout, " %ct4     :  test T4s and T8s only\n", SWITCHAR);
+	fprintf (stdout, " %cz      :  Sparse memory sizing (not a full RAM test)\n", SWITCHAR);
 	fprintf (stdout, " %cq      :  Quick memory sizing option\n", SWITCHAR);
 	fprintf (stdout, " %cx      :  Extra information on why memory search stopped\n", SWITCHAR);
 	fprintf (stdout, " %c0      :  Do not include root processor in tests\n", SWITCHAR);
@@ -115,7 +132,7 @@ struct tpstats *getresults(LINK TheLink, struct tpstats *root, int *delta)
 	struct tpstats *p;
 	struct meminfo *q;
 	unsigned char results[16];
-	unsigned int i, ok;
+	unsigned int i = 0, ok;
 	ok = getiserver (TheLink, &i, (unsigned char *) results, sizeof (results));
 	if ((i == 16) && ok)
 	{
@@ -123,9 +140,16 @@ struct tpstats *getresults(LINK TheLink, struct tpstats *root, int *delta)
 		unsigned long error;
 		id = results[0] + (results[1] << 8);
 		p = find (root, id);
-		if (p == NULL)
-			AbortExit (PROGRAM_NAME, "Cannot find transputer %d", id);
+		if (p == NULL) {
+            fprintf(stderr, "Result for unknown processor %d\n", id);
+            return NULL;
+        }
 		q = (struct meminfo *) p->extra;
+		if (q == NULL || q->endmem != 0 || results[2] > 6 ||
+		    (results[3] > 2 && results[3] < 254)) {
+			fprintf(stderr, "Invalid memory result from processor %d\n", id);
+			return NULL;
+		}
 		q->testno = results[2];
 		q->endmem = results[3];
 		for (i = 15, error = 0; i >= 12; i--)
@@ -163,7 +187,7 @@ struct tpstats *getresults(LINK TheLink, struct tpstats *root, int *delta)
 	}
 }
 
-void sendparams(LINK TheLink, struct tpstats *p, int quick, long endaddr)
+int sendparams(LINK TheLink, struct tpstats *p, int quick, long endaddr)
 {
 	struct meminfo *q;
 	unsigned char params[8];
@@ -171,6 +195,7 @@ void sendparams(LINK TheLink, struct tpstats *p, int quick, long endaddr)
 	int r;
 	
 	q = (struct meminfo *) p->extra;
+	q->endmem = 3;
 	params[0] = (unsigned char) (p->tpid & 0xFF);
 	params[1] = (unsigned char) (p->tpid >> 8);
 	if (quick)
@@ -194,14 +219,17 @@ void sendparams(LINK TheLink, struct tpstats *p, int quick, long endaddr)
 		params[i] = (unsigned char) (endaddr & 0xFF);
 		endaddr = endaddr >> 8;
 	}
-	setroute (TheLink, p, 4);	/* to application  */
-	r = sendiserver(TheLink, 8, params);
-	if (!r)
-		AbortExit(PROGRAM_NAME, "sending test parameters to processor %d", p->tpid);
+	r = tryroute(TheLink, p, 4) && sendiserver(TheLink, 8, params);
+	if (!r) {
+        fprintf(stderr, "Failed sending memory parameters to processor %d\n", p->tpid);
+        return FALSE;
+    }
+	tests_started++;
 	q->watermark = -2048l;
 	q->memspeed = 0;		/* initialise  */
 	q->memsize = 0l;
 	q->endmem = 0;
+	return TRUE;
 }
 
 struct tpstats *sortl(struct tpstats *root)	/* by route length  */
@@ -257,7 +285,7 @@ void printresults (FILE * stream, struct tpstats *p, int quick, int extra)
 		"", "stuck bits test",
 		"random byte test", "random word test",
 		"run code test",
-		"address test"
+		"address test", "sparse sizing probe"
 	};
 	
 	struct meminfo *q;
@@ -273,6 +301,9 @@ void printresults (FILE * stream, struct tpstats *p, int quick, int extra)
 	else
 		fprintf (stream, "\n%s", p->info);
 	
+    if (q && q->endmem == 3) {
+        fprintf(stream, "\n# Processor %d: NOT TESTED", p->tpid);
+    }
 	if (q && (q->endmem == 1) && extra)
 	{
 		unsigned long mint;
@@ -290,7 +321,7 @@ void printresults (FILE * stream, struct tpstats *p, int quick, int extra)
 		}
 		fprintf (stream, "\n# 2K block at %0*lX, bits in error %0*lX, %s",
 			bpw (p->tptype) * 2, mint + 2048l + q->memsize,
-			bpw (p->tptype) * 2, q->error, tests[q->testno]);
+			bpw (p->tptype) * 2, q->error, tests[q->testno <= 6 ? q->testno : 0]);
 	}
 }
 
@@ -328,7 +359,11 @@ void getparams(int argc, char *argv[], int *zero, unsigned long *endaddr,
 	     if (argc-- == 1)
 	       AbortExit (PROGRAM_NAME, " no address after the E option");
 	     ++argv;
-	     *endaddr = atol (*argv);
+             {
+               char *end;
+               *endaddr = strtoul(*argv, &end, 10);
+               if (!**argv || *end) AbortExit(PROGRAM_NAME, "invalid memory ceiling");
+             }
 	     break;
 	   case 'i':
 	   case 'I':
@@ -360,6 +395,11 @@ void getparams(int argc, char *argv[], int *zero, unsigned long *endaddr,
 	         *only = atoi (*argv);
 	         break;
 	       }
+	     break;
+	   case 'z':
+	   case 'Z':
+	     sparse = TRUE;
+	     *quick = TRUE;
 	     break;
 	   case 'q':
 	   case 'Q':
@@ -395,6 +435,7 @@ main (int argc, char *argv[])
   char LinkName[64];
   char CheckFile[64];
   int transputers, i;
+  char fragment[80];
   int logging = TRUE, c4s = FALSE, info = FALSE;
   int zero = TRUE, quick = FALSE, extra = FALSE, soak = FALSE;
   int T2 = FALSE, T4 = FALSE;
@@ -405,6 +446,8 @@ main (int argc, char *argv[])
   CheckFile[0] = '\0';
   getparams (argc, argv, &zero, &endaddr, &c4s, &logging,
 	     &info, &soak, &T2, &T4, &only, &quick, &extra, CheckFile);
+  if (endaddr < 4 || endaddr > 0x40000UL || endaddr % 2 != 0)
+    AbortExit(PROGRAM_NAME, "ceiling must be an even number of KiB from 4 to 262144");
   if (info)
     printf ("# mtest reading ispy results\n");
   if (CheckFile[0]) {
@@ -416,8 +459,19 @@ main (int argc, char *argv[])
   root = sortl (root);		/* sort by route length in case of /R option  */
   if (!transputers--)
     AbortExit (PROGRAM_NAME, "No transputers found");
+  if (only != -1) {
+    p = find(root, only);
+    if (p == NULL || (bpw(p->tptype) != 2 && bpw(p->tptype) != 4))
+      AbortExit(PROGRAM_NAME, "requested processor is absent or unsupported");
+    if ((bpw(p->tptype) == 2 && !T2) || (bpw(p->tptype) == 4 && !T4))
+      AbortExit(PROGRAM_NAME, "requested processor is excluded by the class filter");
+  }
+  for (p = root; p != NULL; p = p->next) {
+    p->extra = Malloc(sizeof(struct meminfo));
+    ((struct meminfo *)p->extra)->endmem = 3;
+  }
   TheLink = OpenLink (LinkName);
-  ok = (TheLink > 0);
+  ok = (TheLink >= 0);
   if (!ok)
     AbortExit (PROGRAM_NAME, "Error opening link name \"%s\"", LinkName);
   /*{{{  load 'em up */
@@ -426,7 +480,11 @@ main (int argc, char *argv[])
   for (p = root; (p != NULL) && ok; p = p->next)
     if (zero || (!zero && (p->parent != NULL)))
       {
-	if ((only == -1) || (only == p->tpid))	/* only load ours */
+	if (bpw(p->tptype) == 2 && !c4s && only == -1) {
+          for (i = 0; i < 4 && class(p->linkno[i]) != C4; i++);
+          if (i < 4) continue;
+        }
+        if ((only == -1) || (only == p->tpid))	/* only load ours */
 	  switch (bpw (p->tptype))
 	    {
 	      /*{{{  16 bitters */
@@ -435,14 +493,13 @@ main (int argc, char *argv[])
 		{
 		  if (info)
 		    printf (" %d", p->tpid);
-		  stop (p);
-		  ok = load (TheLink, p,
-			     mtest16_code.CodeSize,
-			     mtest16_code.Offset,
-			     mtest16_code.WorkSpace,
-			     mtest16_code.VectorSpace,
-			     mtest16_code.BytesPerWord,
-			     mtest16_code.Code);
+		  ok = tryroute(TheLink, p, TAG_HALT) && load (TheLink, p,
+			     (sparse ? size16_code.CodeSize : mtest16_code.CodeSize),
+			     (sparse ? size16_code.Offset : mtest16_code.Offset),
+			     (sparse ? size16_code.WorkSpace : mtest16_code.WorkSpace),
+			     (sparse ? size16_code.VectorSpace : mtest16_code.VectorSpace),
+			     (sparse ? size16_code.BytesPerWord : mtest16_code.BytesPerWord),
+			     (sparse ? size16_code.Code : mtest16_code.Code));
 		}
 	      break;
 	      /*}}}  */
@@ -452,23 +509,23 @@ main (int argc, char *argv[])
 		{
 		  if (info)
 		    printf (" %d", p->tpid);
-		  stop (p);
-		  ok = load (TheLink, p,
-			     mtest32_code.CodeSize,
-			     mtest32_code.Offset,
-			     mtest32_code.WorkSpace,
-			     mtest32_code.VectorSpace,
-			     mtest32_code.BytesPerWord,
-			     mtest32_code.Code);
+		  ok = tryroute(TheLink, p, TAG_HALT) && load (TheLink, p,
+			     (sparse ? size32_code.CodeSize : mtest32_code.CodeSize),
+			     (sparse ? size32_code.Offset : mtest32_code.Offset),
+			     (sparse ? size32_code.WorkSpace : mtest32_code.WorkSpace),
+			     (sparse ? size32_code.VectorSpace : mtest32_code.VectorSpace),
+			     (sparse ? size32_code.BytesPerWord : mtest32_code.BytesPerWord),
+			     (sparse ? size32_code.Code : mtest32_code.Code));
 		}
 	      /*}}}  */
 	    }
 	/*{{{  init  */
 	if (!ok)
 	  printf ("\n%s - Error loading processor %d\n", PROGRAM_NAME, p->tpid);
-	p->extra = Malloc (sizeof (struct meminfo));
+
 	q = (struct meminfo *) p->extra;
 	i = strlen (p->info);
+	if (i >= LINESIZE-1) AbortExit(PROGRAM_NAME, "network line too long for results");
 	p->info[i++] = ' ';
 	p->info[i] = '\0';
 	q->endmem = 3;
@@ -479,7 +536,7 @@ main (int argc, char *argv[])
       }
     else
       {
-	p->extra = Malloc (sizeof (struct meminfo));
+
 	q = (struct meminfo *) p->extra;
 	q->endmem = 3;
 	q->error = 0UL;
@@ -516,7 +573,7 @@ main (int argc, char *argv[])
 		      }
 		    else
 		      {
-			for (i = 0; (class (p->linkno[i]) != C4) && (i < 4); i++);
+			for (i = 0; (i < 4) && (class (p->linkno[i]) != C4); i++);
 			if (i == 4)
 			  {
 			    count++;
@@ -530,7 +587,8 @@ main (int argc, char *argv[])
 	      {
 		if (info)
 		  printf (" %d", p->tpid);
-		sendparams (TheLink, p, quick, endaddr);
+		ok = sendparams (TheLink, p, quick, endaddr);
+                if (!ok) break;
 	      }
 	  }
       /*}}}  */
@@ -544,7 +602,7 @@ main (int argc, char *argv[])
 	      ((struct meminfo *) p->extra)->endmem = 2;
 	      if (info)
 		printf (" %d", p->tpid);
-	      sendparams (TheLink, p, quick, endaddr);
+	      ok = sendparams (TheLink, p, quick, endaddr);
 	    }
 	  /*}}}  */
 	}
@@ -570,7 +628,7 @@ main (int argc, char *argv[])
 			  for (p = root; p != NULL; p = p->next)
 			    {
 			      q = (struct meminfo *) p->extra;
-			      if (q->error)
+			      if (q && q->error)
 				printresults (stderr, p, quick, extra);
 			    }
 			  fprintf (stderr, "\n<%5dMb> ", Mb);
@@ -595,10 +653,10 @@ main (int argc, char *argv[])
 		    case 2:	/* ceiling  */
 		      if (!quick && delta)
 			{
-			  sprintf (&p->info[strlen (p->info)], "%luK,%d ",
+			  sprintf (fragment, "%luK,%d ",
 			       ((q->memsize - 2048l) - q->watermark) / 1024,
 				   q->memspeed - delta);
-			  q->watermark = q->memsize - 2048l;
+			  if (append_info(p, fragment)) q->watermark = q->memsize - 2048l;
 			}
 		    }
 		  if (q->endmem)
@@ -612,18 +670,23 @@ main (int argc, char *argv[])
 			case 1:	/* error  */
 			  terminator = '.';
 			  break;
+			case 254:
+			  terminator = '?';
+			  break;
 			case 255:	/* wrap  */
 			  terminator = ';';
 			  break;
 			}
-		      sprintf (&p->info[strlen (p->info)], "%luK",
-			       (q->memsize - q->watermark) / 1024);
-		      if (!quick)
-			sprintf (&p->info[strlen (p->info)], ",%d%c",
-				 q->memspeed, terminator);
-		      else
-			sprintf (&p->info[strlen (p->info)], "%c",
-				 terminator);
+                      if (q->endmem == 254) {
+                        (void)append_info(p, "UNKNOWN?");
+                        fprintf(stderr, "Processor %d: alias or corruption found in final marker sweep; size is unknown\n", p->tpid);
+                      } else {
+                        if (!quick)
+                          sprintf(fragment, "%luK,%d%c", (q->memsize - q->watermark)/1024, q->memspeed, terminator);
+                        else
+                          sprintf(fragment, "%luK%c", (q->memsize - q->watermark)/1024, terminator);
+                        (void)append_info(p, fragment);
+                      }
 		    }
 		}
 	      else
@@ -631,11 +694,13 @@ main (int argc, char *argv[])
 	      /*}}}  */
 	    }			/* endmemory  */
 	  /*{{{  send params if soak  */
-	  if (soak)
-	    sendparams (TheLink, p, quick, endaddr);
+	  if (soak && ok)
+	    ok = sendparams (TheLink, p, quick, endaddr);
 	  /*}}}  */
 	}			/* count */
     }
+  if (sparse)
+    printf("# SPARSE: one word per 2 KiB; sized, not fully tested\n");
   /*{{{  print results  */
   root = sortid (root);
   if (logging)
@@ -651,6 +716,12 @@ main (int argc, char *argv[])
   /*}}}  */
   CloseLink (TheLink);
   printf ("\n");
-  return (0);
+  for (p = root; p != NULL; p = p->next) {
+    q = (struct meminfo *)p->extra;
+    if (q && (q->error || q->endmem == 0 || q->endmem == 254)) ok = FALSE;
+  }
+  if (!tests_started) fprintf(stderr, "No processors tested\n");
+  while (root != NULL) { p = root; root = p->next; free(p->extra); free(p); }
+  return ok && !report_truncated && tests_started ? 0 : 1;
 }
 /*}}}  */
