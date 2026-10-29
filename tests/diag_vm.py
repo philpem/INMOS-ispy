@@ -16,16 +16,20 @@ class Worker(Monitor):
         self.internal_outputs = bytearray()
         self.alias_at = None
         self.alias = None
+        self.alias_base = 2048
         self.ram_limit = None
         self.ram_fault = None
         self.ram_reads = 0
         self.ram_writes = 0
+        self.application_channel = None
+        self.timer_samples = []
 
     def load(self, address):
         if hasattr(self, 'ram_limit') and address >= self.mint+2048:
             self.ram_reads += 1
             if self.alias_at and address == self.alias_at[0]: address = self.alias_at[1]
-            if self.alias: address = self.mint+2048+(address-self.mint-2048) % self.alias
+            if self.alias and address >= self.mint+self.alias_base:
+                address = self.mint+self.alias_base+(address-self.mint-self.alias_base) % self.alias
             if self.ram_limit and address >= self.mint+self.ram_limit: return 0
             if self.ram_fault == address: return super().load(address) ^ 1
         return super().load(address)
@@ -34,12 +38,21 @@ class Worker(Monitor):
         if hasattr(self, 'ram_limit') and address >= self.mint+2048:
             self.ram_writes += 1
             if self.alias_at and address == self.alias_at[0]: address = self.alias_at[1]
-            if self.alias: address = self.mint+2048+(address-self.mint-2048) % self.alias
+            if self.alias and address >= self.mint+self.alias_base:
+                address = self.mint+self.alias_base+(address-self.mint-self.alias_base) % self.alias
             if self.ram_limit and address >= self.mint+self.ram_limit: return
         super().store(address, value)
 
     def input(self, channel, pointer, count):
-        if channel < self.mint: queue = self.internal
+        if channel < self.mint:
+            if self.application_channel is None: self.application_channel = channel
+            if channel != self.application_channel:
+                assert count == self.word and self.timer_samples, 'Unexpected timer input'
+                value = self.timer_samples.pop(0)
+                for i, byte in enumerate(value.to_bytes(self.word, 'little')):
+                    self.mem[(pointer+i)&self.mask] = byte
+                return
+            queue = self.internal
         else:
             assert channel in self.queues, f'Unexpected input channel {channel:#x}'
             queue = self.queues[channel]

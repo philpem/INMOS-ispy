@@ -72,6 +72,7 @@ int bpw(int tptype)
 }
 /*}}}  */
 /*{{{  void	       AbortExit(char *String,...) */
+#ifndef ISPY_CALLABLE
 void		AbortExit(char *String,...)
 {
     va_list	    ArgPtr;
@@ -126,6 +127,7 @@ void *Malloc(int size)
 
   return(ptr);
 }
+#endif /* ISPY_CALLABLE supplies returning errors and scoped allocation. */
 /*}}}  */
 
 /*
@@ -648,7 +650,12 @@ void		writeCl(struct c4stats * q)
 int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 	unsigned int bytes_to_go = maxlength;
 	unsigned char *read_point = string;
-	int count = 10;
+#ifdef ISPY_CALLABLE
+    const int empty_reads = 1; /* Let a graphical caller report a stalled job. */
+#else
+    const int empty_reads = 10;
+#endif
+	int count = empty_reads;
 
 	while ((bytes_to_go > 0) && (count > 0)) {
 		int bytesread = ReadLink(TheLink, read_point, bytes_to_go, TIMEOUT);
@@ -665,7 +672,7 @@ int readbytes(LINK TheLink, unsigned char *string, unsigned int maxlength) {
 
 		read_point += bytesread;
 		bytes_to_go -= (unsigned int) bytesread;
-		count = 10; /* Only consecutive empty reads count as a timeout. */
+		count = empty_reads; /* Only consecutive empty reads count as a timeout. */
 	}
 
 	if (bytes_to_go != 0) {

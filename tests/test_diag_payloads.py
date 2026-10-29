@@ -49,8 +49,8 @@ class PayloadTests(unittest.TestCase):
             total = int(re.search(r'(\d+)\s*/\* total code requirement', text)[1])
             self.assertLess(total+32, 2048, name)
 
-    def sizing(self, bits, kib=32, **settings):
-        params = b'\0\0\4\0' + ((kib*1024//(bits//8))-1).to_bytes(4, 'little')
+    def sizing(self, bits, kib=32, internal_kib=0, timed=False, **settings):
+        params = bytes((0, 0, 132 if timed else 4, internal_kib)) + ((kib*1024//(bits//8))-1).to_bytes(4, 'little')
         vm = Worker(ROOT/f'size{bits}.h', b'\10\0'+params)
         for key, value in settings.items(): setattr(vm, key, value)
         vm.run()
@@ -83,6 +83,35 @@ class PayloadTests(unittest.TestCase):
         for bits in (16, 32):
             vm, packets = self.sizing(bits, alias_at=((1 << (bits-1))+8192, (1 << (bits-1))+4096))
             self.assertEqual(packets[-1][3], 254)
+
+    def test_sparse_external_wrap_with_separate_internal_ram(self):
+        for bits, external, ceiling in ((16, 8192, 32), (32, 4*1024*1024, 8192)):
+            with self.subTest(bits=bits):
+                vm, packets = self.sizing(bits, ceiling, internal_kib=4,
+                                          alias=external, alias_base=4096)
+                self.assertEqual(packets[-1][3], 255)
+                # Final wrap packet names the first alias; previous progress
+                # names the last valid 2 KiB block.
+                self.assertEqual(int.from_bytes(packets[-1][4:8], 'little')*(bits//8), external+4096)
+                self.assertEqual(int.from_bytes(packets[-2][4:8], 'little')*(bits//8)+2048, external+4096)
+
+    def test_sparse_banked_probe_still_rejects_non_anchor_alias(self):
+        for bits in (16, 32):
+            vm, packets = self.sizing(bits, internal_kib=4,
+                alias_at=((1 << (bits-1))+12288, (1 << (bits-1))+8192))
+            self.assertEqual(packets[-1][3], 254)
+
+    def test_sparse_timing_is_opt_in_and_samples_only_safe_blocks(self):
+        for bits in (16, 32):
+            vm, packets = self.sizing(bits, internal_kib=4, timed=True,
+                timer_samples=[0, 1000, 1042, 1100, 2000, 2126])
+            samples = [(int.from_bytes(p[4:8], 'little')*(bits//8),
+                        int.from_bytes(p[8:12], 'little')) for p in packets
+                       if int.from_bytes(p[8:12], 'little')]
+            self.assertEqual(samples, [(2048, 42), (4096, 126)])
+            self.assertEqual(vm.timer_samples, [])
+            vm, packets = self.sizing(bits, internal_kib=4)
+            self.assertTrue(all(p[8:12] == b'\0'*4 for p in packets))
     def test_sparse_does_not_claim_unprobed_words_tested(self):
         for bits in (16, 32):
             vm, packets = self.sizing(bits, ram_fault=(1 << (bits-1))+4100)
