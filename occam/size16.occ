@@ -200,13 +200,24 @@ PROC size16(VAL INT bootchan)
         [#4000]INT ram :
         PLACE ram AT 0 :
         VAL block.size IS 1024 :
+        INT anchor :
         INT addr  RETYPES [info FROM 4 FOR 2]:
         INT speed RETYPES [info FROM 8 FOR 2] :
         INT error RETYPES [info FROM 12 FOR 2] :
         SEQ
+          -- Optional byte 3: internal RAM size in KiB. Zero retains the
+          -- original first-probe anchor for existing MTEST callers.
+          anchor := (INT info[3]) * 512
+          IF
+            anchor < block.size
+              anchor := block.size
+            TRUE
+              SKIP
           addr := 0
           info[3] := 0(BYTE)
           error := 0
+          info[14] := 0(BYTE)
+          info[15] := 0(BYTE)
           WHILE info[3] = 0(BYTE)
             INT check :
             SEQ
@@ -225,7 +236,7 @@ PROC size16(VAL INT bootchan)
                     IF
                       error <> 0
                         info[3] := 1(BYTE)
-                      ram[block.size] <> block.size
+                      (addr > anchor) AND (ram[anchor] <> anchor)
                         info[3] := $FF(BYTE)
                       (addr PLUS block.size) >= end.addr
                         info[3] := 2(BYTE)
@@ -251,6 +262,17 @@ PROC size16(VAL INT bootchan)
                   --}}}  
               from.application ! 16
               speed := 0
+              -- Bit 7 opts into the existing MTEST block-copy timing method.
+              -- Only sample a safe internal block and the external anchor.
+              IF
+                (start.test >= 128(BYTE)) AND
+                ((addr = block.size) OR (addr = anchor)) AND
+                ((info[3] = 0(BYTE)) OR (info[3] = 2(BYTE)))
+                  speedtest([ram FROM addr FOR block.size], speed)
+                TRUE
+                  SKIP
+              info[10] := 0(BYTE)
+              info[11] := 0(BYTE)
               from.application ! info
               addr := addr PLUS block.size
     --}}}  
